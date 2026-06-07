@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProsArtisan IA - Assistant Visuel & Bouclier d'Autorité</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- CSS Tailwind (CDN) uniquement pour des utilitaires rapides de grille/alignement si nécessaire -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Configurer Tailwind pour s'adapter à notre charte graphique
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brandDark: '#0b0f19',
+            brandSlate: '#111827',
+            brandGray: '#1f2937'
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#0b0f19] text-[#f3f4f6] min-h-screen">
+  
+  <div class="app-container">
+    
+    <!-- 1. HEADER GLOBAL -->
+    <header class="app-header">
+      <div class="logo-container">
+        <div class="logo-badge">ProsArtisan IA</div>
+        <h1 class="text-xl font-bold font-sans tracking-wide">Assistant Visuel & Pipeline d'Ingestion</h1>
+      </div>
+      <div class="header-meta">
+        <a href="/client" target="_blank" class="meta-pill bg-cyan-950/40 text-cyan-400 hover:bg-cyan-900/50 hover:text-cyan-300 font-bold border border-cyan-500/20 transition flex items-center gap-1.5">
+          <span>📱</span> Ouvrir l'application Maçon
+        </a>
+        <div class="meta-pill">Région : Abidjan (Yopougon / Koumassi)</div>
+        <div class="meta-pill text-green-400 flex items-center gap-1">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500"></span>
+          Serveur Actif
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. MAIN WORKSPACE GRID -->
+    <div class="workspace-grid">
+      
+      <!-- A. PORTAIL ADMIN (Pipeline Ingestion + Staging DB) -->
+      <div class="admin-portal">
+        
+        <!-- MODULE I : PIPELINE D'INGESTION SÉMANTIQUE LOCALISÉ (PISL) -->
+        <section class="ingestion-panel glass-panel">
+          <div class="section-title">
+            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            1. Ingestion Sémantique Localisée (PISL)
+          </div>
+          
+          <p class="text-xs text-gray-400 mb-3 leading-relaxed">
+            Téléversez les normes institutionnelles brutes (ex: BNETD, LBTP). Le pipeline extrait les tableaux avec <strong>LlamaParse (VLM)</strong> et réalise un <strong>downscaling sémantique</strong> (traduction en alternatives locales et dosages quincailleries).
+          </p>
+
+          <div class="selector-box flex flex-wrap gap-2 items-center">
+            <select id="doc-select" class="app-select">
+              <!-- Rempli par ui.js -->
+            </select>
+            <input type="file" id="file-import" class="hidden" accept=".txt,.md,.pdf">
+            <button id="btn-import-file" class="btn-primary bg-slate-700 hover:bg-slate-600 border border-slate-600 flex items-center gap-1">
+              <span>📁 Importer</span>
+            </button>
+            <button id="btn-vlm-extract" class="btn-primary">
+              Lancer LlamaParse (VLM)
+            </button>
+            <button id="btn-llm-downscale" class="btn-secondary" disabled>
+              Downscaler la Norme (LLM)
+            </button>
+          </div>
+
+          <!-- Jauge de progression de l'importation -->
+          <div id="import-progress-container" class="w-full bg-white/10 rounded-full h-1.5 mt-3 hidden">
+            <div id="import-progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-150" style="width: 0%"></div>
+          </div>
+
+          <!-- Étape de traitement visualisée -->
+          <div class="flex items-center space-x-6 text-[11px] mb-3 border-t border-b border-white/5 py-2">
+            <span class="text-gray-400">Statut du pipeline :</span>
+            <span id="pisl-step-vlm" class="font-semibold text-gray-500">Extraction Table-Aware</span>
+            <span class="text-gray-600">&rarr;</span>
+            <span id="pisl-step-llm" class="font-semibold text-gray-500">Downscaling LLM & JSON</span>
+          </div>
+
+          <!-- Fenêtre de prévisualisation des résultats intermédiaires -->
+          <div class="preview-grid">
+            <div class="preview-container">
+              <div class="preview-header">Texte original brut (PDF Source)</div>
+              <div id="raw-text-preview" class="preview-body custom-scrollbar"></div>
+            </div>
+            <div class="preview-container">
+              <div class="preview-header">Rendu Markdown extrait par VLM</div>
+              <div id="vlm-markdown-preview" class="preview-body custom-scrollbar text-purple-300"></div>
+            </div>
+          </div>
+
+          <!-- Historique des Importations (Persistant) -->
+          <div class="mt-4 border-t border-white/5 pt-3">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Historique de Suivi des Ingestions (PostgreSQL)</span>
+              <button id="btn-refresh-imports" class="text-[9px] text-blue-400 hover:text-blue-300 hover:underline">🔄 Actualiser</button>
+            </div>
+            <div class="max-h-[150px] overflow-y-auto custom-scrollbar border border-white/10 rounded-lg">
+              <table class="w-full text-left text-[10px] text-gray-300">
+                <thead>
+                  <tr class="bg-white/5 border-b border-white/10 text-gray-500 font-semibold sticky top-0 backdrop-blur-md">
+                    <th class="p-2">Nom du fichier</th>
+                    <th class="p-2">Taille</th>
+                    <th class="p-2">Date d'Importation</th>
+                    <th class="p-2 text-center">VLM Parse</th>
+                    <th class="p-2 text-center">LLM Downscale</th>
+                    <th class="p-2">Statut</th>
+                  </tr>
+                </thead>
+                <tbody id="import-history-list" class="divide-y divide-white/5">
+                  <!-- Chargé dynamiquement depuis PostgreSQL -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- MODULE II : BASE DE STAGING (HUMAN-IN-THE-LOOP) -->
+        <section class="staging-panel glass-panel">
+          <div class="section-title">
+            <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+            2. Base de Staging (Interface de Validation Humaine)
+          </div>
+
+          <p class="text-xs text-gray-400 mb-3 leading-relaxed">
+            Chaque recommandation déclassée par le LLM est isolée en staging. L'expert technique modifie les dosages et prix locaux avant d'approuver l'indexation définitive dans la Vector DB.
+          </p>
+
+          <div class="staging-columns">
+            <!-- Liste latérale des éléments en staging -->
+            <div class="staging-sidebar custom-scrollbar">
+              <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Fiches en Staging</h4>
+              <div id="staging-list">
+                <!-- Rempli par ui.js -->
+              </div>
+            </div>
+
+            <!-- Éditeur de détails (Formulaire interactif) -->
+            <div id="staging-details" class="staging-main custom-scrollbar bg-black/20 p-3 rounded-lg border border-white/5">
+              <!-- Rempli par ui.js à la sélection d'un item -->
+              <div class="text-gray-400 italic text-center py-8">Sélectionnez une fiche pour l'examiner et la modifier</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MODULE III : VECTOR DB DE PRODUCTION (QDRANT) -->
+        <section class="production-panel glass-panel">
+          <div class="section-title">
+            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+            3. Index Vectoriel de Production (Qdrant - Validé)
+          </div>
+          <div id="production-list" class="production-list-container custom-scrollbar">
+            <!-- Rempli par ui.js -->
+          </div>
+        </section>
+
+      </div>
+
+      <!-- B. VISU SIMULATEUR MOBILE (Vision to RAG) -->
+      <div class="mobile-simulator-container">
+        <div class="text-xs font-semibold text-gray-400">Simulateur Mobile du Maçon (3G / Offline)</div>
+        
+        <!-- Sélecteur de connexion réseau pour simuler la 3G/Offline -->
+        <div class="network-selector">
+          <button id="btn-net-wifi" class="network-btn bg-blue-600 text-white">Wifi (Fibre)</button>
+          <button id="btn-net-3g" class="network-btn">3G instable</button>
+          <button id="btn-net-offline" class="network-btn">Hors-ligne</button>
+        </div>
+
+        <!-- Coque du téléphone physique -->
+        <div class="phone-mockup">
+          <div class="phone-notch">
+            <div class="phone-speaker"></div>
+            <div class="phone-camera"></div>
+          </div>
+          
+          <div class="phone-screen custom-scrollbar">
+            <!-- Smartphone Header -->
+            <div class="phone-header">
+              <div class="phone-app-title">
+                🛡️ Pros<span>Artisan</span>
+              </div>
+              <div class="phone-status-dots">
+                <span class="phone-dot active"></span>
+                <span class="phone-dot active"></span>
+                <span class="phone-dot"></span>
+              </div>
+            </div>
+
+            <!-- ÉCRAN 1 : FORMULAIRE DE PRISE DE PHOTO (SÉLECTEUR DE PATHOLOGIE) -->
+            <div id="mobile-screen-select" class="space-y-4">
+              <div>
+                <div class="mobile-section-title">Prendre en Photo la Pathologie</div>
+                <p class="text-[10px] text-gray-400 mb-2">Simulez la prise de photo en choisissant un cas d'étude réel de chantier :</p>
+                <div id="pathology-selector" class="preset-list">
+                  <!-- Rempli par ui.js -->
+                </div>
+              </div>
+
+              <!-- Filtres locaux du maçon (Métadonnées) -->
+              <div class="mobile-filters">
+                <div class="mobile-section-title">Options du Chantier</div>
+                
+                <div class="mobile-filter-group mt-2">
+                  <label>Budget maximum disponible</label>
+                  <select id="filter-budget" class="mobile-select">
+                    <option value="Faible">Faible (Quincailleries locales uniquement)</option>
+                    <option value="Moyen" selected>Moyen (Norme et adjuvants standards)</option>
+                    <option value="Eleve">Élevé (Traitement technique pro)</option>
+                  </select>
+                </div>
+
+                <div class="mobile-filter-group mt-3">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="filter-hardware-only">
+                    <span>Matériaux en quincaillerie de quartier</span>
+                  </label>
+                </div>
+              </div>
+
+              <button id="btn-run-diagnostic" class="w-full py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white text-xs font-bold rounded-xl transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                Lancer le Diagnostic Assisté
+              </button>
+            </div>
+
+            <!-- ÉCRAN 2 : RÉSULTAT DU RAG (LE BOUCLIER D'AUTORITÉ) -->
+            <div id="mobile-screen-result" class="space-y-4 hidden flex flex-col h-full">
+              <div class="flex justify-between items-center border-b border-white/5 pb-2">
+                <button id="btn-back-to-select" class="text-[10px] text-blue-400 hover:underline flex items-center gap-1">
+                  &larr; Retour
+                </button>
+                <span class="text-[9px] text-gray-400 font-mono">Solution RAG active</span>
+              </div>
+
+              <!-- Écran de Chargement -->
+              <div id="mobile-loader" class="loader-container">
+                <div class="spinner"></div>
+                <div class="text-[10px] text-gray-400 text-center animate-pulse">
+                  Compression d'image...<br>Appel de la Vector DB Qdrant...
+                </div>
+              </div>
+
+              <!-- Zone de Rendu du Résultat RAG final -->
+              <div id="mobile-result-container" class="custom-scrollbar overflow-y-auto flex-1">
+                <!-- Rempli dynamiquement par ui.js -->
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 3. RENDER REAL-TIME LOGS TERMINAL (CONSO DU PIPELINE D'IA) -->
+    <footer class="logs-panel glass-panel mt-4">
+      <div class="logs-header">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-ping"></span>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-cyan-400 font-mono">Console d'Ingénierie & Logs de Pipeline (RAG / Vision / Offline)</span>
+        </div>
+        <button id="btn-clear-logs" class="text-[10px] text-gray-500 hover:text-white underline transition">
+          Vider la console
+        </button>
+      </div>
+      <div id="logs-console" class="console-container custom-scrollbar">
+        <!-- Rempli par ui.js et app.js -->
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast-notification" class="fixed top-4 right-4 z-50 glass-panel bg-slate-900/95 border border-green-500/30 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 transform translate-x-full transition-all duration-300">
+    <span class="text-green-400 font-bold">✓</span>
+    <span id="toast-message" class="text-xs font-semibold">Importation réussie !</span>
+  </div>
+
+  <!-- Script principal d'amorçage de l'application -->
+  <script type="module">
+    import { initUI } from "./ui.js";
+    document.addEventListener("DOMContentLoaded", () => {
+      initUI();
+    });
+  </script>
+</body>
+</html>
