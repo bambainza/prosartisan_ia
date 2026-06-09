@@ -1,0 +1,8 @@
+# key.properties.example
+# Copy this file to 'key.properties' in the same directory and fill in your signing credentials.
+# Make sure to keep your real 'key.properties' secure and NEVER commit it to git.
+
+storePassword=YOUR_KEYSTORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
+storeFile=YOUR_KEYSTORE_FILE_PATH (e.g. /Users/username/upload-keystore.jks or relative path to this directory like keystore.jks)
