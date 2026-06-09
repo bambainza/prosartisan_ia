@@ -126,6 +126,31 @@ def init_database():
                 llm_downscaled BOOLEAN DEFAULT FALSE
             );
             """)
+
+            # Table des utilisateurs
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                email VARCHAR(255) PRIMARY KEY,
+                password_hash VARCHAR(255) NOT NULL,
+                reset_token VARCHAR(255),
+                reset_token_expiry TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL
+            );
+            """)
+
+            # Insertion de l'utilisateur admin par défaut si la table est vide
+            cursor.execute("SELECT COUNT(*) FROM users;")
+            if cursor.fetchone()[0] == 0:
+                print("Insertion de l'utilisateur admin par défaut dans PostgreSQL...")
+                import hashlib
+                salt = "prosartisan_secure_salt_2026"
+                default_password_hash = hashlib.sha256(("admin123" + salt).encode('utf-8')).hexdigest()
+                now_str = datetime.utcnow().isoformat() + "Z"
+                cursor.execute(
+                    "INSERT INTO users (email, password_hash, created_at) VALUES (%s, %s, %s);",
+                    ("admin@prosartisan.ci", default_password_hash, now_str)
+                )
+
             conn.commit()
 
             # --- JEU DE DONNÉES INITIAL (SEEDS) ---
@@ -259,16 +284,32 @@ def init_database():
 
 # --- REQUÊTES ET ROUTAGE API ---
 
+import hashlib
+import secrets
+
+ACTIVE_SESSIONS = {}  # token -> email
+
+def hash_password(password: str) -> str:
+    salt = "prosartisan_secure_salt_2026"
+    return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
+
 class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         super().end_headers()
 
     def do_OPTIONS(self):
         self.send_response(204)
         self.end_headers()
+
+    def get_authenticated_user(self):
+        auth_header = self.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return None
+        token = auth_header.split(" ", 1)[1]
+        return ACTIVE_SESSIONS.get(token)
 
     def translate_path(self, path):
         # Override translate_path to serve static assets from the frontend/ folder
@@ -293,8 +334,30 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
+        # GET /api/auth/me
+        if path == "/api/auth/me":
+            user = self.get_authenticated_user()
+            if not user:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"email": user}).encode("utf-8"))
+            return
+
         # GET /api/staging
-        if path == "/api/staging":
+        elif path == "/api/staging":
+            user = self.get_authenticated_user()
+            if not user:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                return
             conn = None
             try:
                 conn = psycopg2.connect(
@@ -373,6 +436,13 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
 
         # GET /api/imports
         elif path == "/api/imports":
+            user = self.get_authenticated_user()
+            if not user:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                return
             conn = None
             try:
                 conn = psycopg2.connect(
@@ -422,9 +492,313 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
 
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8')
+
+        public_post_paths = {
+            "/api/auth/register",
+            "/api/auth/login",
+            "/api/auth/forgot-password",
+            "/api/auth/reset-password",
+            "/api/auth/oauth2/callback",
+            "/api/search",
+            "/api/chat"
+        }
         
+        if path not in public_post_paths:
+            user = self.get_authenticated_user()
+            if not user:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                return
+
+        # POST /api/auth/register
+        if path == "/api/auth/register":
+            try:
+                data = json.loads(body)
+                email = data.get("email", "").strip().lower()
+                password = data.get("password", "")
+                
+                if not email or not password:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Email et mot de passe requis"}).encode("utf-8"))
+                    return
+                
+                if "@" not in email:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Format d'email invalide"}).encode("utf-8"))
+                    return
+                
+                conn = psycopg2.connect(
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                    dbname=PG_DB
+                )
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT email FROM users WHERE email = %s;", (email,))
+                    if cursor.fetchone():
+                        self.send_response(400)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Cet utilisateur existe déjà"}).encode("utf-8"))
+                        return
+                    
+                    hashed = hash_password(password)
+                    now_str = datetime.utcnow().isoformat() + "Z"
+                    cursor.execute(
+                        "INSERT INTO users (email, password_hash, created_at) VALUES (%s, %s, %s);",
+                        (email, hashed, now_str)
+                    )
+                    conn.commit()
+                
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "message": "Utilisateur créé avec succès"}).encode("utf-8"))
+            except Exception as e:
+                print(f"Erreur d'inscription : {e}")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn:
+                    conn.close()
+            return
+
+        # POST /api/auth/login
+        elif path == "/api/auth/login":
+            try:
+                data = json.loads(body)
+                email = data.get("email", "").strip().lower()
+                password = data.get("password", "")
+                
+                conn = psycopg2.connect(
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                    dbname=PG_DB
+                )
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                    cursor.execute("SELECT password_hash FROM users WHERE email = %s;", (email,))
+                    row = cursor.fetchone()
+                    
+                    if not row or row["password_hash"] != hash_password(password):
+                        self.send_response(401)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Identifiants incorrects"}).encode("utf-8"))
+                        return
+                    
+                token = secrets.token_hex(24)
+                ACTIVE_SESSIONS[token] = email
+                
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "token": token, "email": email}).encode("utf-8"))
+            except Exception as e:
+                print(f"Erreur de connexion : {e}")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn:
+                    conn.close()
+            return
+
+        # POST /api/auth/forgot-password
+        elif path == "/api/auth/forgot-password":
+            try:
+                data = json.loads(body)
+                email = data.get("email", "").strip().lower()
+                
+                conn = psycopg2.connect(
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                    dbname=PG_DB
+                )
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT email FROM users WHERE email = %s;", (email,))
+                    if not cursor.fetchone():
+                        self.send_response(404)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Aucun utilisateur trouvé avec cet email"}).encode("utf-8"))
+                        return
+                    
+                    reset_token = secrets.token_hex(4).upper()
+                    from datetime import timedelta
+                    expiry = datetime.utcnow() + timedelta(minutes=15)
+                    expiry_str = expiry.isoformat() + "Z"
+                    
+                    cursor.execute(
+                        "UPDATE users SET reset_token = %s, reset_token_expiry = %s WHERE email = %s;",
+                        (reset_token, expiry_str, email)
+                    )
+                    conn.commit()
+                
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "status": "success", 
+                    "message": "Un code de réinitialisation a été généré.",
+                    "reset_token": reset_token
+                }).encode("utf-8"))
+            except Exception as e:
+                print(f"Erreur mot de passe oublié : {e}")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn:
+                    conn.close()
+            return
+
+        # POST /api/auth/reset-password
+        elif path == "/api/auth/reset-password":
+            try:
+                data = json.loads(body)
+                email = data.get("email", "").strip().lower()
+                reset_token = data.get("reset_token", "").strip().upper()
+                new_password = data.get("new_password", "")
+                
+                if not email or not reset_token or not new_password:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Champs requis manquants"}).encode("utf-8"))
+                    return
+                
+                conn = psycopg2.connect(
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                    dbname=PG_DB
+                )
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                    cursor.execute("SELECT reset_token, reset_token_expiry FROM users WHERE email = %s;", (email,))
+                    row = cursor.fetchone()
+                    
+                    if not row or not row["reset_token"] or row["reset_token"] != reset_token:
+                        self.send_response(400)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Code de réinitialisation invalide"}).encode("utf-8"))
+                        return
+                    
+                    expiry = row["reset_token_expiry"]
+                    if isinstance(expiry, str):
+                        expiry_clean = re.sub(r'Z$|\+00:00$', '', expiry)
+                        expiry_dt = datetime.fromisoformat(expiry_clean)
+                    else:
+                        expiry_dt = expiry.replace(tzinfo=None) if expiry else datetime.utcnow()
+                    
+                    if expiry_dt < datetime.utcnow():
+                        self.send_response(400)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Le code de réinitialisation a expiré"}).encode("utf-8"))
+                        return
+                    
+                    hashed = hash_password(new_password)
+                    cursor.execute(
+                        "UPDATE users SET password_hash = %s, reset_token = NULL, reset_token_expiry = NULL WHERE email = %s;",
+                        (hashed, email)
+                    )
+                    conn.commit()
+                
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "message": "Votre mot de passe a été réinitialisé"}).encode("utf-8"))
+            except Exception as e:
+                print(f"Erreur réinitialisation : {e}")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn:
+                    conn.close()
+            return
+
+        # POST /api/auth/oauth2/callback
+        elif path == "/api/auth/oauth2/callback":
+            try:
+                data = json.loads(body)
+                email = data.get("email", "").strip().lower()
+                code = data.get("code", "")
+                
+                if not email or not code:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Email et code requis"}).encode("utf-8"))
+                    return
+                
+                if not code.startswith("MOCK_AUTH_"):
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Code d'authentification invalide"}).encode("utf-8"))
+                    return
+                
+                conn = psycopg2.connect(
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                    dbname=PG_DB
+                )
+                with conn.cursor() as cursor:
+                    # Check if user already exists
+                    cursor.execute("SELECT email FROM users WHERE email = %s;", (email,))
+                    if not cursor.fetchone():
+                        # Auto-register user since it's OAuth2 (first connection = registration)
+                        now_str = datetime.utcnow().isoformat() + "Z"
+                        # Placeholder password because it is authenticated via OAuth2
+                        cursor.execute(
+                            "INSERT INTO users (email, password_hash, created_at) VALUES (%s, %s, %s);",
+                            (email, "OAUTH2_EXTERNAL_AUTHENTICATION", now_str)
+                        )
+                        conn.commit()
+                        print(f"Nouvel utilisateur enregistré via OAuth2 (Google) : {email}")
+                    
+                # Create session
+                token = secrets.token_hex(24)
+                ACTIVE_SESSIONS[token] = email
+                
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "token": token, "email": email}).encode("utf-8"))
+            except Exception as e:
+                print(f"Erreur OAuth2 Callback : {e}")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn:
+                    conn.close()
+            return
+
         # POST /api/staging
-        if path == "/api/staging":
+        elif path == "/api/staging":
             conn = None
             try:
                 data = json.loads(body)
@@ -786,6 +1160,14 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
     def do_PUT(self):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
+
+        user = self.get_authenticated_user()
+        if not user:
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+            return
 
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8')

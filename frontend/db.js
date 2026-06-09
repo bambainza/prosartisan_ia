@@ -29,10 +29,137 @@ export const INITIAL_PATHOLOGY_PRESETS = [
 ];
 
 class APIDatabaseClient {
+  // --- AUTH UTILS ---
+  getHeaders() {
+    const token = localStorage.getItem("auth_token");
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    };
+  }
+
+  handleResponse(res) {
+    if (res.status === 401) {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("user_email");
+      if (!window.location.pathname.endsWith("/login.html")) {
+        if (window.location.pathname.includes("/client")) {
+          window.location.href = "/login.html?redirect=/client";
+        } else {
+          window.location.href = "/login.html";
+        }
+      }
+      throw new Error("Session expirée. Veuillez vous reconnecter.");
+    }
+    return res;
+  }
+
+  // --- AUTH API ---
+  async register(email, password) {
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error("Erreur register:", err);
+      return { error: err.message };
+    }
+  }
+
+  async login(email, password) {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem("auth_token", data.token);
+        localStorage.setItem("user_email", data.email);
+      }
+      return data;
+    } catch (err) {
+      console.error("Erreur login:", err);
+      return { error: err.message };
+    }
+  }
+
+  async forgotPassword(email) {
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error("Erreur forgot-password:", err);
+      return { error: err.message };
+    }
+  }
+
+  async resetPassword(email, resetToken, newPassword) {
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, reset_token: resetToken, new_password: newPassword })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error("Erreur reset-password:", err);
+      return { error: err.message };
+    }
+  }
+
+  async verifyToken() {
+    const token = localStorage.getItem("auth_token");
+    if (!token) return false;
+    try {
+      const res = await fetch("/api/auth/me", {
+        headers: this.getHeaders()
+      });
+      if (res.status === 200) {
+        return true;
+      } else {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user_email");
+        return false;
+      }
+    } catch (err) {
+      console.error("Erreur verification token:", err);
+      return false;
+    }
+  }
+
+  async oauth2Callback(email, code) {
+    try {
+      const res = await fetch("/api/auth/oauth2/callback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code })
+      });
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem("auth_token", data.token);
+        localStorage.setItem("user_email", data.email);
+      }
+      return data;
+    } catch (err) {
+      console.error("Erreur oauth2-callback:", err);
+      return { error: err.message };
+    }
+  }
+
   // --- STAGING DB ---
   async getStagingItems() {
     try {
-      const res = await fetch("/api/staging");
+      const res = await fetch("/api/staging", { headers: this.getHeaders() });
+      this.handleResponse(res);
       if (!res.ok) throw new Error("Erreur réseau");
       return await res.json();
     } catch (err) {
@@ -45,9 +172,10 @@ class APIDatabaseClient {
     try {
       const res = await fetch("/api/staging", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.getHeaders(),
         body: JSON.stringify(item)
       });
+      this.handleResponse(res);
       return await res.json();
     } catch (err) {
       console.error("Impossible d'ajouter la fiche en staging:", err);
@@ -59,9 +187,10 @@ class APIDatabaseClient {
     try {
       const res = await fetch(`/api/staging/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: this.getHeaders(),
         body: JSON.stringify(updatedJson)
       });
+      this.handleResponse(res);
       return await res.json();
     } catch (err) {
       console.error("Impossible de modifier la fiche en staging:", err);
@@ -72,8 +201,10 @@ class APIDatabaseClient {
   async approveStagingItem(id) {
     try {
       const res = await fetch(`/api/staging/${id}/approve`, {
-        method: "POST"
+        method: "POST",
+        headers: this.getHeaders()
       });
+      this.handleResponse(res);
       return await res.json();
     } catch (err) {
       console.error("Impossible d'approuver la fiche:", err);
@@ -85,9 +216,10 @@ class APIDatabaseClient {
     try {
       const res = await fetch(`/api/staging/${id}/reject`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.getHeaders(),
         body: JSON.stringify({ reviewer_notes: reviewerNotes })
       });
+      this.handleResponse(res);
       return await res.json();
     } catch (err) {
       console.error("Impossible de rejeter la fiche:", err);
@@ -98,7 +230,8 @@ class APIDatabaseClient {
   // --- PRODUCTION VECTOR DB ---
   async getProductionItems() {
     try {
-      const res = await fetch("/api/production");
+      const res = await fetch("/api/production", { headers: this.getHeaders() });
+      this.handleResponse(res);
       if (!res.ok) throw new Error("Erreur réseau");
       return await res.json();
     } catch (err) {
@@ -146,7 +279,8 @@ class APIDatabaseClient {
 
   async getImportHistory() {
     try {
-      const res = await fetch("/api/imports");
+      const res = await fetch("/api/imports", { headers: this.getHeaders() });
+      this.handleResponse(res);
       if (!res.ok) throw new Error("Erreur réseau");
       return await res.json();
     } catch (err) {
@@ -159,9 +293,10 @@ class APIDatabaseClient {
     try {
       const res = await fetch("/api/imports", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.getHeaders(),
         body: JSON.stringify(item)
       });
+      this.handleResponse(res);
       return await res.json();
     } catch (err) {
       console.error("Impossible d'historiser l'importation:", err);
@@ -173,9 +308,10 @@ class APIDatabaseClient {
     try {
       const res = await fetch(`/api/imports/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: this.getHeaders(),
         body: JSON.stringify(updates)
       });
+      this.handleResponse(res);
       return await res.json();
     } catch (err) {
       console.error("Impossible de mettre à jour le statut de l'import:", err);

@@ -320,6 +320,16 @@ function setupEventListeners() {
   dom.btnClearLogs.addEventListener("click", () => {
     dom.logsConsole.innerHTML = '<div class="text-gray-500 italic">Terminal nettoyé. En attente de nouvelles actions...</div>';
   });
+
+  // Déconnexion
+  const btnLogout = document.getElementById("btn-logout");
+  if (btnLogout) {
+    btnLogout.addEventListener("click", () => {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("user_email");
+      window.location.href = "/login.html";
+    });
+  }
 }
 
 // --- RENDU INGESTION ---

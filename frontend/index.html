@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+  <script>
+    if (!localStorage.getItem("auth_token")) {
+      window.location.href = "/login.html";
+    }
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProsArtisan IA - Assistant Visuel & Bouclier d'Autorité</title>
@@ -36,6 +41,9 @@
         <a href="/client" target="_blank" class="meta-pill bg-cyan-950/40 text-cyan-400 hover:bg-cyan-900/50 hover:text-cyan-300 font-bold border border-cyan-500/20 transition flex items-center gap-1.5">
           <span>📱</span> Ouvrir l'application Maçon
         </a>
+        <button id="btn-logout" class="meta-pill bg-red-950/40 text-red-400 hover:bg-red-900/50 hover:text-red-300 font-bold border border-red-500/20 transition flex items-center gap-1">
+          <span>🚪</span> Déconnexion
+        </button>
         <div class="meta-pill">Région : Abidjan (Yopougon / Koumassi)</div>
         <div class="meta-pill text-green-400 flex items-center gap-1">
           <span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500"></span>

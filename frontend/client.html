@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+  <script>
+    if (!localStorage.getItem("auth_token")) {
+      window.location.href = "/login.html?redirect=/client";
+    }
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProsArtisan Mobile - Assistant Chantier</title>
@@ -31,9 +36,14 @@
       <div class="app-logo">
         🛡️ Pros<span>Artisan</span>
       </div>
-      <button class="settings-btn" id="nav-settings" title="Paramètres Réseau">
-        <span>⚙️</span>
-      </button>
+      <div class="flex items-center gap-1.5">
+        <button class="settings-btn" id="nav-settings" title="Paramètres Réseau">
+          <span>⚙️</span>
+        </button>
+        <button class="settings-btn" id="btn-client-logout" title="Déconnexion" style="color: var(--neon-red);">
+          <span>🚪</span>
+        </button>
+      </div>
     </header>
     
     <!-- APP MAIN CONTENT (SCROLLABLE) -->

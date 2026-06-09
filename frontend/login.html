@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProsArtisan IA - Connexion Back Office</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brandDark: '#0b0f19',
+            brandSlate: '#111827',
+            brandGray: '#1f2937'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Premium custom CSS for glowing inputs and animations */
+    .glow-input:focus {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 12px var(--accent-blue-glow);
+    }
+    
+    .fade-in {
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .logo-container-login {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+    
+    .logo-badge-login {
+      background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-cyan) 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 1.2rem;
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+      display: inline-block;
+    }
+  </style>
+</head>
+<body class="bg-[#0b0f19] text-[#f3f4f6] min-h-screen flex items-center justify-center p-4">
+
+  <div class="w-full max-w-md fade-in">
+    
+    <!-- Header Logo -->
+    <div class="logo-container-login text-center">
+      <div class="logo-badge-login">ProsArtisan IA</div>
+      <h1 class="text-2xl font-bold tracking-wide text-white">Back Office</h1>
+      <p class="text-xs text-gray-400">Assistant Visuel & Pipeline d'Ingestion</p>
+    </div>
+
+    <!-- Alert Panel (Simulation Emails, Errors, Messages) -->
+    <div id="alert-box" class="hidden mb-4 p-4 rounded-xl text-xs font-semibold border transition duration-300"></div>
+
+    <!-- Main Glass Card -->
+    <div class="glass-panel p-8 bg-[#111827]/70 border border-white/10 rounded-2xl shadow-2xl relative overflow-hidden">
+      <!-- Glow Effect inside the Card -->
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      
+      <!-- 1. VIEW: LOGIN -->
+      <div id="view-login" class="space-y-5">
+        <div class="text-center">
+          <h2 class="text-xl font-semibold text-white">Connexion</h2>
+          <p class="text-xs text-gray-400 mt-1">Accédez à la validation des normes et à la Vector DB</p>
+        </div>
+
+        <form id="form-login" class="space-y-4">
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
+            <input type="email" id="login-email" placeholder="admin@prosartisan.ci" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200">
+          </div>
+
+          <div class="space-y-1">
+            <div class="flex justify-between items-center">
+              <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Mot de passe</label>
+              <button type="button" onclick="switchView('forgot')" class="text-[11px] text-blue-400 hover:underline">Mot de passe oublié ?</button>
+            </div>
+            <input type="password" id="login-password" placeholder="••••••••" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200">
+          </div>
+
+          <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-sm transition duration-200 shadow-lg shadow-blue-500/20">
+            Se connecter
+          </button>
+          
+          <div class="relative flex py-1 items-center">
+            <div class="flex-grow border-t border-white/10"></div>
+            <span class="flex-shrink mx-4 text-gray-500 text-[10px] font-bold uppercase tracking-wider">ou</span>
+            <div class="flex-grow border-t border-white/10"></div>
+          </div>
+
+          <button type="button" onclick="startGoogleLogin()" class="w-full py-2 bg-white hover:bg-gray-100 text-gray-900 font-semibold rounded-lg text-xs transition duration-200 flex items-center justify-center gap-2 border border-gray-300 shadow-md">
+            <svg class="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            Continuer avec Google
+          </button>
+        </form>
+
+        <div class="text-center text-xs text-gray-400 pt-2 border-t border-white/5">
+          Pas encore de compte ? 
+          <button onclick="switchView('register')" class="text-blue-400 hover:underline font-semibold ml-1">Créer un compte</button>
+        </div>
+
+        <!-- Seed Hint -->
+        <div class="bg-blue-950/20 border border-blue-800/20 rounded-lg p-3 text-[11px] text-blue-400 leading-relaxed">
+          💡 **Identifiants de démo :**<br>
+          Email : <span class="font-mono select-all font-semibold">admin@prosartisan.ci</span><br>
+          Mot de passe : <span class="font-mono select-all font-semibold">admin123</span>
+        </div>
+      </div>
+
+      <!-- 2. VIEW: REGISTER (SIGN UP) -->
+      <div id="view-register" class="space-y-5 hidden">
+        <div class="text-center">
+          <h2 class="text-xl font-semibold text-white">Créer un compte</h2>
+          <p class="text-xs text-gray-400 mt-1">Créez vos identifiants pour administrer la base de données</p>
+        </div>
+
+        <form id="form-register" class="space-y-4">
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
+            <input type="email" id="register-email" placeholder="votre@email.com" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200">
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Mot de passe</label>
+            <input type="password" id="register-password" placeholder="••••••••" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200">
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Confirmer le mot de passe</label>
+            <input type="password" id="register-confirm-password" placeholder="••••••••" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200">
+          </div>
+
+          <button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg text-sm transition duration-200 shadow-lg shadow-emerald-500/20">
+            S'inscrire
+          </button>
+
+          <div class="relative flex py-1 items-center">
+            <div class="flex-grow border-t border-white/10"></div>
+            <span class="flex-shrink mx-4 text-gray-500 text-[10px] font-bold uppercase tracking-wider">ou</span>
+            <div class="flex-grow border-t border-white/10"></div>
+          </div>
+
+          <button type="button" onclick="startGoogleLogin()" class="w-full py-2 bg-white hover:bg-gray-100 text-gray-900 font-semibold rounded-lg text-xs transition duration-200 flex items-center justify-center gap-2 border border-gray-300 shadow-md">
+            <svg class="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            S'inscrire avec Google
+          </button>
+        </form>
+
+        <div class="text-center text-xs text-gray-400 pt-2 border-t border-white/5">
+          Déjà inscrit ? 
+          <button onclick="switchView('login')" class="text-blue-400 hover:underline font-semibold ml-1">Se connecter</button>
+        </div>
+      </div>
+
+      <!-- 3. VIEW: FORGOT PASSWORD -->
+      <div id="view-forgot" class="space-y-5 hidden">
+        <div class="text-center">
+          <h2 class="text-xl font-semibold text-white">Mot de passe oublié</h2>
+          <p class="text-xs text-gray-400 mt-1">Saisissez votre e-mail pour recevoir un code de réinitialisation</p>
+        </div>
+
+        <form id="form-forgot" class="space-y-4">
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
+            <input type="email" id="forgot-email" placeholder="votre@email.com" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200">
+          </div>
+
+          <button type="submit" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg text-sm transition duration-200 shadow-lg shadow-purple-500/20">
+            Générer un code de réinitialisation
+          </button>
+        </form>
+
+        <div class="text-center text-xs text-gray-400 pt-2 border-t border-white/5">
+          Retourner à la 
+          <button onclick="switchView('login')" class="text-blue-400 hover:underline font-semibold ml-1">connexion</button>
+        </div>
+      </div>
+
+      <!-- 4. VIEW: RESET PASSWORD -->
+      <div id="view-reset" class="space-y-5 hidden">
+        <div class="text-center">
+          <h2 class="text-xl font-semibold text-white">Réinitialisation</h2>
+          <p class="text-xs text-gray-400 mt-1">Saisissez le code de réinitialisation et votre nouveau mot de passe</p>
+        </div>
+
+        <form id="form-reset" class="space-y-4">
+          <!-- We keep email read-only so the user knows which account they are resetting -->
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
+            <input type="email" id="reset-email" readonly
+                   class="w-full bg-slate-800 border border-white/5 text-gray-400 rounded-lg p-2.5 text-sm outline-none cursor-not-allowed">
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Code de réinitialisation</label>
+            <input type="text" id="reset-token" placeholder="8F9B2A10" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200 tracking-widest font-mono text-center">
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Nouveau mot de passe</label>
+            <input type="password" id="reset-password" placeholder="••••••••" required
+                   class="w-full bg-[#1f2937]/50 border border-white/10 text-white rounded-lg p-2.5 text-sm outline-none glow-input transition duration-200">
+          </div>
+
+          <button type="submit" class="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-semibold rounded-lg text-sm transition duration-200 shadow-lg shadow-orange-500/20">
+            Valider le nouveau mot de passe
+          </button>
+        </form>
+
+        <div class="text-center text-xs text-gray-400 pt-2 border-t border-white/5">
+          Retourner à la 
+          <button onclick="switchView('login')" class="text-blue-400 hover:underline font-semibold ml-1">connexion</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { dbInstance } from "./db.js";
+
+    // Global OAuth2 navigation triggers
+    window.startGoogleLogin = function() {
+      const redirect = new URLSearchParams(window.location.search).get("redirect");
+      if (redirect) {
+        window.location.href = `/oauth2_consent.html?redirect=${encodeURIComponent(redirect)}`;
+      } else {
+        window.location.href = "/oauth2_consent.html";
+      }
+    };
+
+    // Check URL parameters for OAuth2 redirect
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const email = urlParams.get("email");
+    const redirectParam = urlParams.get("redirect");
+
+    if (code && email) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      showAlert(`⚡ Connexion via Google (${email}) en cours...`, "info");
+      
+      setTimeout(async () => {
+        const res = await dbInstance.oauth2Callback(email, code);
+        if (res.error) {
+          showAlert("❌ Échec de l'authentification Google : " + res.error, "error");
+        } else if (res.token) {
+          showAlert("✓ Authentifié via Google avec succès !", "success");
+          setTimeout(() => {
+            window.location.href = redirectParam || "/index.html";
+          }, 800);
+        }
+      }, 1000);
+    }
+
+    // Global switch view helper
+    window.switchView = function(viewName) {
+      hideAlert();
+      document.getElementById("view-login").classList.add("hidden");
+      document.getElementById("view-register").classList.add("hidden");
+      document.getElementById("view-forgot").classList.add("hidden");
+      document.getElementById("view-reset").classList.add("hidden");
+
+      if (viewName === 'login') {
+        document.getElementById("view-login").classList.remove("hidden");
+      } else if (viewName === 'register') {
+        document.getElementById("view-register").classList.remove("hidden");
+      } else if (viewName === 'forgot') {
+        document.getElementById("view-forgot").classList.remove("hidden");
+      } else if (viewName === 'reset') {
+        document.getElementById("view-reset").classList.remove("hidden");
+      }
+    };
+
+    // Alert functions
+    function showAlert(message, type = "error") {
+      const alertBox = document.getElementById("alert-box");
+      alertBox.classList.remove("hidden", "bg-red-950/40", "border-red-500/30", "text-red-400", "bg-green-950/40", "border-green-500/30", "text-green-400", "bg-purple-950/40", "border-purple-500/30", "text-purple-400");
+      
+      alertBox.innerHTML = message;
+      
+      if (type === "error") {
+        alertBox.classList.add("bg-red-950/40", "border-red-500/30", "text-red-400");
+      } else if (type === "success") {
+        alertBox.classList.add("bg-green-950/40", "border-green-500/30", "text-green-400");
+      } else if (type === "info") {
+        alertBox.classList.add("bg-purple-950/40", "border-purple-500/30", "text-purple-400");
+      }
+      alertBox.classList.remove("hidden");
+    }
+
+    function hideAlert() {
+      document.getElementById("alert-box").classList.add("hidden");
+    }
+
+    // Auth flows
+    document.getElementById("form-login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlert();
+      const email = document.getElementById("login-email").value;
+      const password = document.getElementById("login-password").value;
+
+      const res = await dbInstance.login(email, password);
+      if (res.error) {
+        showAlert("❌ " + res.error, "error");
+      } else if (res.token) {
+        showAlert("✓ Connexion réussie, redirection...", "success");
+        setTimeout(() => {
+          const redirect = new URLSearchParams(window.location.search).get("redirect");
+          window.location.href = redirect || "/index.html";
+        }, 800);
+      }
+    });
+
+    document.getElementById("form-register").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlert();
+      const email = document.getElementById("register-email").value;
+      const password = document.getElementById("register-password").value;
+      const confirm = document.getElementById("register-confirm-password").value;
+
+      if (password !== confirm) {
+        showAlert("❌ Les mots de passe ne correspondent pas.", "error");
+        return;
+      }
+
+      const res = await dbInstance.register(email, password);
+      if (res.error) {
+        showAlert("❌ " + res.error, "error");
+      } else {
+        showAlert("✓ Inscription réussie ! Vous pouvez maintenant vous connecter.", "success");
+        setTimeout(() => {
+          document.getElementById("login-email").value = email;
+          switchView("login");
+        }, 1500);
+      }
+    });
+
+    document.getElementById("form-forgot").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlert();
+      const email = document.getElementById("forgot-email").value;
+
+      const res = await dbInstance.forgotPassword(email);
+      if (res.error) {
+        showAlert("❌ " + res.error, "error");
+      } else {
+        const resetToken = res.reset_token;
+        const simulationMsg = `🔑 **[Simulation] Code de réinitialisation généré :**<br>
+                               <span class="font-mono text-white select-all text-sm font-bold bg-purple-900/40 px-2 py-1 rounded border border-purple-500/20">${resetToken}</span><br>
+                               *(Copiez-le et collez-le ci-dessous)*`;
+        
+        showAlert(simulationMsg, "info");
+        setTimeout(() => {
+          document.getElementById("reset-email").value = email;
+          document.getElementById("reset-token").value = resetToken;
+          switchView("reset");
+        }, 3000);
+      }
+    });
+
+    document.getElementById("form-reset").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideAlert();
+      const email = document.getElementById("reset-email").value;
+      const token = document.getElementById("reset-token").value;
+      const newPassword = document.getElementById("reset-password").value;
+
+      const res = await dbInstance.resetPassword(email, token, newPassword);
+      if (res.error) {
+        showAlert("❌ " + res.error, "error");
+      } else {
+        showAlert("✓ Mot de passe réinitialisé avec succès ! Connexion en cours...", "success");
+        
+        // Connect auto
+        const loginRes = await dbInstance.login(email, newPassword);
+        if (loginRes.token) {
+          setTimeout(() => {
+            const redirect = new URLSearchParams(window.location.search).get("redirect");
+            window.location.href = redirect || "/index.html";
+          }, 1000);
+        } else {
+          setTimeout(() => {
+            switchView("login");
+          }, 1500);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

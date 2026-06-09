@@ -104,6 +104,7 @@ class ClientAppManager {
       navDiag: document.getElementById("nav-diag"),
       navMap: document.getElementById("nav-map"),
       navSettings: document.getElementById("nav-settings"),
+      btnClientLogout: document.getElementById("btn-client-logout"),
       badgeNetwork: document.getElementById("badge-network"),
       settingsModal: document.getElementById("settings-modal"),
       btnCloseSettings: document.getElementById("btn-close-settings"),
@@ -142,6 +143,15 @@ class ClientAppManager {
     this.dom.btnCloseSettings.addEventListener("click", () => {
       this.dom.settingsModal.classList.add("hidden");
     });
+
+    // Clic sur Déconnexion
+    if (this.dom.btnClientLogout) {
+      this.dom.btnClientLogout.addEventListener("click", () => {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user_email");
+        window.location.href = "/login.html?redirect=/client";
+      });
+    }
 
     // Clic sur Carte
     this.dom.navMap.addEventListener("click", () => {
