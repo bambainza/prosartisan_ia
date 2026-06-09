@@ -1,0 +1,781 @@
+openapi: 3.0.3
+info:
+  title: ProsArtisan IA API
+  description: Spécifications des APIs REST du projet ProsArtisan IA. Fournit les fonctionnalités d'authentification, de gestion du staging, de recherche hybride, de chatbot BTP, et de suivi des importations de rapports de pathologie.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000
+    description: Serveur de développement local
+paths:
+  /api/auth/register:
+    post:
+      summary: Inscription d'un utilisateur (classique)
+      tags:
+        - Authentification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: jean.macon@gmail.com
+                password:
+                  type: string
+                  format: password
+                  example: monsecret123
+      responses:
+        '201':
+          description: Utilisateur créé avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: User created successfully
+        '400':
+          description: Requête invalide ou email déjà existant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Email already exists
+        '500':
+          description: Erreur interne du serveur
+
+  /api/auth/login:
+    post:
+      summary: Connexion d'un utilisateur (classique)
+      tags:
+        - Authentification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@prosartisan.ci
+                password:
+                  type: string
+                  format: password
+                  example: admin123
+      responses:
+        '200':
+          description: Connexion réussie, jeton généré
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: MOCK_TOKEN_a1b2c3d4e5f6...
+                  email:
+                    type: string
+                    example: admin@prosartisan.ci
+        '401':
+          description: Identifiants incorrects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Invalid email or password
+        '500':
+          description: Erreur interne du serveur
+
+  /api/auth/forgot-password:
+    post:
+      summary: Demande de réinitialisation de mot de passe (génération de code)
+      tags:
+        - Authentification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: jean.macon@gmail.com
+      responses:
+        '200':
+          description: Code de réinitialisation généré avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  reset_token:
+                    type: string
+                    example: 8FA2D3B1
+        '404':
+          description: Email non trouvé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: User not found
+        '500':
+          description: Erreur interne du serveur
+
+  /api/auth/reset-password:
+    post:
+      summary: Réinitialisation du mot de passe avec le code temporaire
+      tags:
+        - Authentification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - reset_token
+                - new_password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: jean.macon@gmail.com
+                reset_token:
+                  type: string
+                  example: 8FA2D3B1
+                new_password:
+                  type: string
+                  format: password
+                  example: nouveausecret123
+      responses:
+        '200':
+          description: Mot de passe mis à jour avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Password reset successfully
+        '400':
+          description: Code incorrect ou expiré
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Invalid reset token
+        '500':
+          description: Erreur interne du serveur
+
+  /api/auth/oauth2/callback:
+    post:
+      summary: Callback et inscription/connexion automatique via Google OAuth2 simulé
+      tags:
+        - Authentification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: jean.macon@gmail.com
+                code:
+                  type: string
+                  example: MOCK_AUTH_859385
+      responses:
+        '200':
+          description: Connexion et session démarrées avec succès via Google
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: MOCK_TOKEN_oauth2_83859...
+                  email:
+                    type: string
+                    example: jean.macon@gmail.com
+        '400':
+          description: Code d'autorisation invalide
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Invalid authorization code
+        '500':
+          description: Erreur interne du serveur
+
+  /api/auth/me:
+    get:
+      summary: Récupération des informations de session de l'utilisateur connecté
+      tags:
+        - Authentification
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Utilisateur authentifié
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    example: admin@prosartisan.ci
+        '401':
+          description: Session expirée ou non autorisée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Unauthorized
+        '500':
+          description: Erreur interne du serveur
+
+  /api/staging:
+    get:
+      summary: Récupérer toutes les fiches de pathologies en staging
+      tags:
+        - Staging
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Liste des fiches de staging retournée
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StagingItem'
+        '401':
+          description: Non autorisé
+        '500':
+          description: Erreur interne du serveur
+    post:
+      summary: Ajouter une nouvelle fiche de pathologie en staging
+      tags:
+        - Staging
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - generated_json
+              properties:
+                id:
+                  type: string
+                  example: doc-101
+                raw_pdf_source:
+                  type: string
+                  nullable: true
+                  example: rapport_chantier_yop.pdf
+                original_extracted_text:
+                  type: string
+                  nullable: true
+                  example: Mur humide salpêtre constaté en soubassement...
+                generated_json:
+                  type: object
+                  example:
+                    metadata:
+                      type_ouvrage: "Remontée capillaire"
+                      tags_pathologies: ["remontee_capillaire", "humidite_bas"]
+                status:
+                  type: string
+                  example: PENDING
+      responses:
+        '201':
+          description: Fiche ajoutée en staging
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  id:
+                    type: string
+                    example: doc-101
+        '401':
+          description: Non autorisé
+        '500':
+          description: Erreur interne
+
+  /api/staging/{id}:
+    put:
+      summary: Mettre à jour une fiche en staging
+      tags:
+        - Staging
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: doc-101
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: JSON de la fiche modifiée
+      responses:
+        '200':
+          description: Fiche modifiée avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  updated:
+                    type: string
+                    example: doc-101
+        '401':
+          description: Non autorisé
+        '500':
+          description: Erreur interne
+
+  /api/staging/{id}/approve:
+    post:
+      summary: Approuver une fiche en staging et la promouvoir en production (Vector DB)
+      tags:
+        - Staging
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: doc-101
+      responses:
+        '200':
+          description: Promotion réussie vers la base de production
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  promoted:
+                    type: string
+                    example: doc-101
+                  generated_json:
+                    type: object
+        '401':
+          description: Non autorisé
+        '404':
+          description: Fiche non trouvée
+        '500':
+          description: Erreur interne
+
+  /api/staging/{id}/reject:
+    post:
+      summary: Rejeter une fiche en staging avec des notes
+      tags:
+        - Staging
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: doc-101
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reviewer_notes
+              properties:
+                reviewer_notes:
+                  type: string
+                  example: La recette de dosage de SikaCim n'est pas claire.
+      responses:
+        '200':
+          description: Fiche rejetée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  rejected:
+                    type: string
+                    example: doc-101
+        '401':
+          description: Non autorisé
+        '500':
+          description: Erreur interne
+
+  /api/production:
+    get:
+      summary: Récupérer toutes les fiches de pathologies publiées en production (Public)
+      tags:
+        - Production
+      responses:
+        '200':
+          description: Liste des fiches de production
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '500':
+          description: Erreur interne
+
+  /api/search:
+    post:
+      summary: Effectuer une recherche hybride sémantique + métadonnées (Public)
+      tags:
+        - Recherche et Assistance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tags
+              properties:
+                tags:
+                  type: array
+                  items:
+                    type: string
+                  example: ["remontee_capillaire", "humidite_bas"]
+                filters:
+                  type: object
+                  properties:
+                    maxBudget:
+                      type: string
+                      example: Moyen
+                    onlyHardwareStore:
+                      type: boolean
+                      example: false
+      responses:
+        '200':
+          description: Résultats de la recherche ordonnés
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '500':
+          description: Erreur interne
+
+  /api/chat:
+    post:
+      summary: Poser une question au chatbot BTP RAG (Public)
+      tags:
+        - Recherche et Assistance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  example: Comment doser le mortier avec hydrofuge SikaCim ?
+                history:
+                  type: array
+                  items:
+                    type: object
+                  example: []
+      responses:
+        '200':
+          description: Réponse du chatbot générée par RAG
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+                    example: Pour un sac de ciment de 50 kg, utilisez 1 sachet de SikaCim (1 kg) dans l'eau de gâchage...
+                  sources:
+                    type: array
+                    items:
+                      type: string
+                    example: ["Fiche technique SikaCim", "Règles de l'Art BTP"]
+        '500':
+          description: Erreur interne du serveur
+
+  /api/imports:
+    get:
+      summary: Récupérer l'historique de toutes les importations de rapports PDF
+      tags:
+        - Imports Historique
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Liste de l'historique des importations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ImportItem'
+        '401':
+          description: Non autorisé
+        '500':
+          description: Erreur interne
+    post:
+      summary: Enregistrer le début d'une importation de fichier
+      tags:
+        - Imports Historique
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - filename
+                - file_size
+                - imported_at
+              properties:
+                id:
+                  type: string
+                  example: imp-202
+                filename:
+                  type: string
+                  example: rapport_humidite.pdf
+                file_size:
+                  type: integer
+                  example: 1245900
+                imported_at:
+                  type: string
+                  example: "2026-06-09T11:12:00Z"
+                status:
+                  type: string
+                  example: PENDING_VLM
+      responses:
+        '201':
+          description: Importation enregistrée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  id:
+                    type: string
+                    example: imp-202
+        '401':
+          description: Non autorisé
+        '500':
+          description: Erreur interne
+
+  /api/imports/{id}:
+    put:
+      summary: Mettre à jour le statut et l'état des extractions (VLM, LLM) d'un import
+      tags:
+        - Imports Historique
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: imp-202
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: COMPLETED
+                vlm_extracted:
+                  type: boolean
+                  example: true
+                llm_downscaled:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Statut mis à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  updated:
+                    type: string
+                    example: imp-202
+        '401':
+          description: Non autorisé
+        '500':
+          description: Erreur interne
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    StagingItem:
+      type: object
+      properties:
+        id:
+          type: string
+          example: doc-101
+        raw_pdf_source:
+          type: string
+          nullable: true
+          example: rapport_chantier_yop.pdf
+        original_extracted_text:
+          type: string
+          nullable: true
+          example: Mur humide salpêtre constaté en soubassement...
+        generated_json:
+          type: object
+          properties:
+            metadata:
+              type: object
+              properties:
+                type_ouvrage:
+                  type: string
+                  example: Remontée capillaire
+                tags_pathologies:
+                  type: array
+                  items:
+                    type: string
+                  example: ["remontee_capillaire", "humidite_bas"]
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+          example: PENDING
+        reviewer_notes:
+          type: string
+          nullable: true
+          example: review notes...
+        created_at:
+          type: string
+          example: "2026-06-09T10:12:00Z"
+        updated_at:
+          type: string
+          example: "2026-06-09T10:15:00Z"
+        validated_at:
+          type: string
+          nullable: true
+          example: "2026-06-09T10:20:00Z"
+    ImportItem:
+      type: object
+      properties:
+        id:
+          type: string
+          example: imp-202
+        filename:
+          type: string
+          example: rapport_humidite.pdf
+        file_size:
+          type: integer
+          example: 1245900
+        imported_at:
+          type: string
+          example: "2026-06-09T11:12:00Z"
+        status:
+          type: string
+          example: COMPLETED
+        vlm_extracted:
+          type: boolean
+          example: true
+        llm_downscaled:
+          type: boolean
+          example: true

@@ -334,6 +334,13 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
+        # Redirect /docs or /swagger to /docs.html
+        if path in ("/docs", "/swagger", "/api-docs"):
+            self.send_response(301)
+            self.send_header("Location", "/docs.html")
+            self.end_headers()
+            return
+
         # GET /api/auth/me
         if path == "/api/auth/me":
             user = self.get_authenticated_user()
