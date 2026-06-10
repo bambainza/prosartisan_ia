@@ -800,8 +800,16 @@ async function runDiagnosticWorkflow() {
               <div class="text-[10px] text-gray-400">Diagnostic :</div>
               <div class="font-bold text-white text-xs">${d.pathologie_detectee}</div>
             </div>
-            <span class="text-[9px] px-2 py-0.5 rounded font-bold ${isOffline ? 'bg-orange-500/20 text-orange-400' : 'bg-green-500/20 text-green-400'}">
-              ${isOffline ? 'CACHE LOCAL' : 'MODÈLE CLOUD'}
+            <span class="text-[9px] px-2 py-0.5 rounded font-bold ${
+              isOffline 
+                ? 'bg-orange-500/20 text-orange-400' 
+                : (d.is_llm_fallback ? 'bg-purple-500/20 text-purple-400' : 'bg-green-500/20 text-green-400')
+            }">
+              ${
+                isOffline 
+                  ? 'CACHE LOCAL' 
+                  : (d.is_llm_fallback ? `ASSISTANT LLM (${d.generated_for || 'Anonyme'})` : 'MODÈLE CLOUD')
+              }
             </span>
           </div>
 

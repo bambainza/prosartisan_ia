@@ -52,7 +52,7 @@ class AppManager {
   setNetworkState(state) {
     this.currentNetworkState = state;
     this.log("system", `État du réseau modifié : ${state.toUpperCase()}`);
-    
+
     // Si on repasse en ligne, vider la file d'attente (synchronisation)
     if (state !== "offline" && this.offlineQueue.length > 0) {
       this.syncOfflineQueue();
@@ -60,7 +60,7 @@ class AppManager {
   }
 
   // --- PIPELINE 1 : Ingestion & Déclassement (PISL) ---
-  
+
   /**
    * Simule la conversion d'un PDF technique en Markdown sémantique (LlamaParse)
    */
@@ -69,7 +69,7 @@ class AppManager {
     if (!doc) return null;
 
     this.log("vlm", "Lancement du traitement LlamaParse (Extraction de tables)...");
-    
+
     // Simuler le délai d'appel API VLM
     await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -87,7 +87,7 @@ class AppManager {
    */
   async simulateLLMDownscaling(docTitle, rawText, markdown) {
     this.log("llm-downscale", "Envoi des données brutes + tableaux de dosages au LLM de déclassement...");
-    
+
     await new Promise(resolve => setTimeout(resolve, 1200));
 
     // Générer un JSON adapté au type de document
@@ -223,7 +223,7 @@ class AppManager {
   }
 
   // --- PIPELINE 2 : Interface de Staging & Ingestion en Production ---
-  
+
   async approveItem(id) {
     const item = await dbInstance.approveStagingItem(id);
     if (item && !item.error) {
@@ -261,11 +261,11 @@ class AppManager {
   async processUserPhotoAndRAG(pathologyPreset, userFilters = {}) {
     const startTime = Date.now();
     this.log("mobile-app", `Début du traitement de l'image de pathologie : "${pathologyPreset.title}"`);
-    
+
     // 1. Simuler la compression locale sur le mobile
     this.log("mobile-app", "Simulation de la compression native de l'image...");
     await new Promise(resolve => setTimeout(resolve, 300));
-    
+
     const sizeOriginal = "4.2 Mo (PNG brut)";
     const sizeCompressed = "38 Ko (WebP progressif 800x800, Q=70)";
     this.log("mobile-app", `Compression terminée : ${sizeOriginal} -> ${sizeCompressed}`);
@@ -287,21 +287,29 @@ class AppManager {
     // 3. Appel du modèle de vision (simulé)
     this.log("vision-model", "Appel du modèle de vision de pathologie du bâtiment...");
     await new Promise(resolve => setTimeout(resolve, 500));
-    
+
     const detectedTags = pathologyPreset.tags;
     this.log("vision-model", `Pathologie classifiée avec succès. Tags détectés : [${detectedTags.join(", ")}]`);
 
     // 4. Recherche hybride dans la Vector DB (Qdrant)
     this.log("vector-db", `Requête de recherche vectorielle hybride lancée... Tags : [${detectedTags.join(", ")}]`);
-    
+
     // Récupérer les fiches correspondantes
     const searchResults = await dbInstance.hybridSearch(detectedTags, userFilters);
-    
+
     if (searchResults.length === 0) {
       this.log("vector-db", "Aucun résultat trouvé dans la Vector DB pour ces critères.");
+      this.log("llm-fallback", "Consultation du LLM génératif associé au compte (Intégration socio-anthropologique)...");
+
+      const fallbackData = this.generateLLMFallbackPitch(pathologyPreset, userFilters);
+      const fallbackDuration = ((Date.now() - startTime) / 1000).toFixed(1);
+
       return {
-        status: "no_results",
-        message: "Aucune solution validée ne correspond à vos critères et à votre budget dans la base de production."
+        status: "success",
+        source: "llm_fallback",
+        duration: fallbackDuration,
+        tags: detectedTags,
+        data: fallbackData
       };
     }
 
@@ -312,7 +320,7 @@ class AppManager {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     const finalResponse = this.generatePersuasivePitch(searchResults[0], pathologyPreset, userFilters);
-    
+
     const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1);
     this.log("system", `Workflow terminé avec succès en ${totalDuration}s.`);
 
@@ -341,17 +349,47 @@ class AppManager {
       pathologie_detectee: pathologyPreset.title,
       budget_categorie: prixBadge,
       estimation_fcfa: cost.estimation_m2_fcfa,
-      
+
       // Bouclier d'autorité (Persuasion client)
-      argumentaire_client: `« Propriétaire, votre mur présente des remontées d'humidité qui proviennent du sol (capillarité). Si nous refaisons simplement la peinture, elle va cloquer et tomber d'ici la fin de la saison des pluies. Selon les règles de construction de l'État (norme LBTP), il est obligatoire de créer une arase étanche ou barrière de coupure pour stopper l'eau. En appliquant la méthode ProsArtisan avec du ciment CPJ 42.5 et un hydrofuge de masse SikaCim, nous protégeons durablement votre mur et votre investissement. C'est l'assurance d'avoir un bâtiment sain sans avoir à refaire les travaux chaque année. »`,
-      
+      argumentaire_client: alt.bouclier_autorite || `« Propriétaire, votre mur présente des remontées d'humidité qui proviennent du sol (capillarité). Si nous refaisons simplement la peinture, elle va cloquer et tomber d'ici la fin de la saison des pluies. Selon les règles de construction de l'État (norme LBTP), il est obligatoire de créer une arase étanche ou barrière de coupure pour stopper l'eau. En appliquant la méthode ProsArtisan avec du ciment CPJ 42.5 et un hydrofuge de masse SikaCim, nous protégeons durablement votre mur et votre investissement. C'est l'assurance d'avoir un bâtiment sain sans avoir à refaire les travaux chaque année. »`,
+
       // Fiche technique pour le maçon
       instructions_techniques: alt.methode_execution,
-      
+
       // Matériaux à acheter
       dosages: alt.dosages_recommandes,
       materiaux: alt.materiaux_recommandes,
-      justification_prix: cost.justification_economique
+      justification_prix: cost.justification_economique,
+      
+      // Indication Fallback LLM
+      is_llm_fallback: knowledgeItem.metadata.is_llm_fallback || false,
+      generated_for: knowledgeItem.metadata.generated_for || null
+    };
+  }
+
+  generateLLMFallbackPitch(pathologyPreset, filters) {
+    return {
+      titre: `Diagnostic IA : ${pathologyPreset.title}`,
+      type_ouvrage: "Général",
+      pathologie_detectee: pathologyPreset.title,
+      budget_categorie: "🟡 Modéré",
+      estimation_fcfa: "Sur devis spécifique",
+
+      // Bouclier d'autorité (Persuasion client)
+      argumentaire_client: `« Grand-frère (ou Patron), la maison c'est le refuge de la famille. Face à ce problème de ${pathologyPreset.title.toLowerCase()}, mon devoir d'artisan est de vous conseiller la meilleure solution pour votre tranquillité. Un bon traitement aujourd'hui, avec de bons matériaux, vous évitera de jeter l'argent par la fenêtre demain. On va gérer ça proprement selon les règles. »`,
+
+      // Fiche technique pour le maçon
+      instructions_techniques: `🌟 Contexte Anthropologique Ivoirien :\n1. Posture : Parlez avec respect ("Grand-frère") mais restez le "Boss" (l'expert).\n2. Ne critiquez pas l'artisan précédent devant le client, préservez l'harmonie sociale.\n\n🛠️ Action Technique :\nUtilisez des matériaux adaptés (ex: CPJ 42.5 ou hydrofuge selon le cas) et respectez le temps de séchage.`,
+
+      // Matériaux à acheter
+      dosages: [
+        { element: "Ciment adapté", ratio: "Selon norme", unite_mesure_locale: "Sac" },
+        { element: "Sable de carrière propre", ratio: "Proportion standard", unite_mesure_locale: "Brouette (60L)" }
+      ],
+      materiaux: [
+        { nom: "Matériaux de base", substitut_acceptable: "Selon arrivage", disponibilite: "Quincaillerie" }
+      ],
+      justification_prix: "L'IA conseille d'ajuster selon la quincaillerie locale. Rappelez que rogner sur la qualité crée des doubles dépenses ('Mougou-mougou coûte cher')."
     };
   }
 
@@ -360,7 +398,7 @@ class AppManager {
    */
   async executeLocalFallback(pathologyPreset, userFilters) {
     this.log("mobile-app", "Exécution du fallback local : Démarrage du modèle ONNX embarqué...");
-    
+
     // Simuler le traitement du modèle de vision TFLite/ONNX local (plus rapide car pas d'envoi réseau)
     const detectedTags = pathologyPreset.tags;
     this.log("mobile-app", `Vision locale terminée. Tags de pathologie identifiés : [${detectedTags.join(", ")}]`);
@@ -405,7 +443,7 @@ class AppManager {
   async syncOfflineQueue() {
     this.log("network", `Réseau rétabli. Synchronisation de la queue locale (${this.offlineQueue.length} éléments en attente)...`);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     this.log("network", "Synchronisation terminée. Rapports d'analyse transmis au serveur cloud ProsArtisan.");
     this.offlineQueue = [];
   }

@@ -50,14 +50,19 @@ prosartisan_ia/
 ### Prérequis
 * Python 3
 * Un serveur PostgreSQL local démarré sur le port `5432` avec un utilisateur `postgres` (mot de passe par défaut : `postgres`).
+* (Optionnel mais recommandé) Une clé d'API Gemini pour activer l'IA générative dans le chatbot.
 
 ### Lancement
 1. Clonez ce dépôt.
-2. Démarrez le serveur API :
+2. Installez les dépendances :
    ```bash
-   python3 backend/server.py
+   pip install -r backend/requirements.txt
    ```
-3. Ouvrez votre navigateur sur :
+3. Démarrez le serveur API (avec votre clé Gemini pour activer l'IA) :
+   ```bash
+   GEMINI_API_KEY="votre_cle_api" python3 backend/server.py
+   ```
+4. Ouvrez votre navigateur sur :
    * Le portail d'administration : **[http://localhost:8000](http://localhost:8000)**
    * L'application mobile maçon : **[http://localhost:8000/client](http://localhost:8000/client)**
 

@@ -4,6 +4,8 @@
  * Gère la communication API, la synthèse/reconnaissance vocale et les simulations offline/3G.
  */
 
+import { dbInstance } from "./db.js";
+
 // Presets de pathologies pour le simulateur
 const PATHOLOGY_PRESETS = [
   {
@@ -39,7 +41,7 @@ class ClientAppManager {
     this.speechUtterance = null;
     this.isRecording = false;
     this.isPlayingAudio = false;
-    
+
     // Cache local simulé en localStorage
     this.localCache = {};
   }
@@ -50,7 +52,7 @@ class ClientAppManager {
     this.bindEvents();
     this.setupSpeechRecognition();
     this.drawMap();
-    
+
     this.log("system", "Application ProsArtisan Mobile initialisée.");
   }
 
@@ -84,7 +86,7 @@ class ClientAppManager {
       screenResult: document.getElementById("screen-result"),
       loaderPanel: document.getElementById("loader-panel"),
       resultArea: document.getElementById("result-area"),
-      
+
       // Inputs
       uploadInput: document.getElementById("image-upload"),
       uploadZone: document.getElementById("upload-zone"),
@@ -94,12 +96,12 @@ class ClientAppManager {
       btnDiagnose: document.getElementById("btn-diagnose"),
       btnBackHome: document.getElementById("btn-back-home"),
       btnSimulateVoice: document.getElementById("btn-simulate-voice"),
-      
+
       // Compression
       compressIndicator: document.getElementById("compress-indicator"),
       compressBar: document.getElementById("compress-bar"),
       compressText: document.getElementById("compress-text"),
-      
+
       // Navigation & Settings
       navDiag: document.getElementById("nav-diag"),
       navMap: document.getElementById("nav-map"),
@@ -109,12 +111,12 @@ class ClientAppManager {
       settingsModal: document.getElementById("settings-modal"),
       btnCloseSettings: document.getElementById("btn-close-settings"),
       selectNetwork: document.getElementById("setting-network"),
-      
+
       // Interactive map
       mapCanvas: document.getElementById("quincaillerie-map"),
       mapView: document.getElementById("map-view"),
       btnBackMap: document.getElementById("btn-back-map"),
-      
+
       // Chat BTP
       navChat: document.getElementById("nav-chat"),
       chatView: document.getElementById("chat-view"),
@@ -124,7 +126,7 @@ class ClientAppManager {
       btnChatMic: document.getElementById("btn-chat-mic"),
       chatInput: document.getElementById("chat-input"),
       btnSendChat: document.getElementById("btn-send-chat"),
-      
+
       // Console
       consoleLogs: document.getElementById("console-logs")
     };
@@ -283,7 +285,7 @@ class ClientAppManager {
         card.classList.add("active");
         this.selectedPreset = p;
         this.dom.btnDiagnose.disabled = false;
-        
+
         // Simuler la compression sur la sélection d'un preset
         this.simulateCompression(p.title + ".jpg");
       });
@@ -344,10 +346,10 @@ class ClientAppManager {
     const textPreset = "Le mur là est trop mouillé au salon, la peinture est en train de quitter dessus, le salpêtre a gâté tout le bas. On a besoin d'arase étanche propre avec hydrofuge SikaCim.";
     this.dom.dictationInput.value = "";
     let i = 0;
-    
+
     this.log("voice", "Simulation de dictée vocale Nouchi...");
     this.dom.btnMic.classList.add("recording");
-    
+
     const typingInterval = setInterval(() => {
       this.dom.dictationInput.value += textPreset[i];
       i++;
@@ -368,7 +370,7 @@ class ClientAppManager {
       tags: ["remontee_capillaire", "humidite_bas", "salpetre"], // Fallback par défaut
       description: "Image importée par l'utilisateur."
     };
-    
+
     // Afficher l'aperçu de l'image dans la zone d'upload
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -386,15 +388,15 @@ class ClientAppManager {
     this.dom.compressIndicator.classList.remove("hidden");
     this.dom.compressBar.style.width = "0%";
     this.dom.compressText.textContent = "Traitement en cours...";
-    
+
     const sizeMo = (originalSize / (1024 * 1024)).toFixed(1);
-    
+
     let progress = 0;
     const interval = setInterval(() => {
       progress += 15;
       if (progress > 100) progress = 100;
       this.dom.compressBar.style.width = `${progress}%`;
-      
+
       if (progress >= 100) {
         clearInterval(interval);
         // Taille compressée simulée (entre 20 et 50 Ko)
@@ -409,10 +411,10 @@ class ClientAppManager {
   async runDiagnostic() {
     this.dom.screenHome.classList.add("hidden");
     this.dom.loaderPanel.classList.remove("hidden");
-    
+
     const tags = this.selectedPreset ? this.selectedPreset.tags : ["remontee_capillaire"];
     const textContext = this.dom.dictationInput.value;
-    
+
     // Simuler le délai réseau selon le mode sélectionné
     let delay = 400;
     if (this.networkState === "3g") {
@@ -427,20 +429,20 @@ class ClientAppManager {
 
     try {
       let resultDoc = null;
-      
+
       if (this.networkState === "offline") {
         // Mode offline : Charger du cache local (LocalStorage)
         const localCacheData = JSON.parse(localStorage.getItem("prosartisan_cache") || "[]");
         // Filtrer par tags
-        resultDoc = localCacheData.find(item => 
+        resultDoc = localCacheData.find(item =>
           item.metadata.tags_pathologies.some(t => tags.includes(t))
         );
-        
+
         // Si aucun match local, prendre la première fiche du cache
         if (!resultDoc && localCacheData.length > 0) {
           resultDoc = localCacheData[0];
         }
-        
+
         // Enregistrer la requête dans la queue de synchro locale
         this.offlineQueue.push({
           timestamp: new Date().toISOString(),
@@ -448,28 +450,17 @@ class ClientAppManager {
           text: textContext,
           status: "pending_sync"
         });
-        
+
         this.log("offline-queue", "Diagnostic sauvegardé localement dans la file d'attente.");
         this.renderConsoleLogs();
       } else {
-        // Mode en ligne : Requête POST /api/search vers PostgreSQL
-        const response = await fetch((window.API_BASE_URL || "") + "/api/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tags: tags,
-            filters: {
-              maxBudget: "Moyen",
-              onlyHardwareStore: false
-            }
-          })
+        // Mode en ligne : Requête POST /api/search avec jeton
+        const list = await dbInstance.hybridSearch(tags, {
+          maxBudget: "Moyen",
+          onlyHardwareStore: false
         });
-
-        if (response.ok) {
-          const list = await response.json();
-          if (list && list.length > 0) {
-            resultDoc = list[0];
-          }
+        if (list && list.length > 0) {
+          resultDoc = list[0];
         }
       }
 
@@ -481,13 +472,11 @@ class ClientAppManager {
         this.renderResult(resultDoc);
         this.log("rag", `Résultat du RAG récupéré pour la fiche : "${resultDoc.alternative_prosartisan.titre_vulgarise}"`);
       } else {
-        this.dom.resultArea.innerHTML = `
-          <div class="glass-card text-center py-6">
-            <span class="text-2xl block mb-2">🔍</span>
-            <p class="text-sm font-semibold">Aucun résultat trouvé.</p>
-            <p class="text-xs text-slate-400 mt-2">La base de données ne contient aucune alternative validée pour ces critères.</p>
-          </div>
-        `;
+        this.log("llm", "Aucun résultat dans la base RAG. Interrogation du LLM (Contexte socio-anthropologique ivoirien)...");
+        resultDoc = await this.fallbackToLLM(tags, textContext);
+        this.currentDoc = resultDoc;
+        this.renderResult(resultDoc);
+        this.log("llm", "Diagnostic LLM de secours généré avec succès.");
       }
 
     } catch (err) {
@@ -505,19 +494,58 @@ class ClientAppManager {
     }
   }
 
+  async fallbackToLLM(tags, textContext) {
+    this.log("llm", "Génération de l'analyse avec contexte culturel (Solidarité, Respect des aînés)...");
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const detectedIssue = tags.length > 0 ? tags.join(", ").replace(/_/g, " ") : "Problème non spécifié";
+
+    return {
+      id: "llm-fallback-" + Date.now(),
+      norme_origine: {
+        source: "LLM Génératif ProsArtisan",
+        titre_original: "Analyse experte générée par IA",
+        reference_article: "N/A"
+      },
+      metadata: {
+        type_ouvrage: "Général",
+        tags_pathologies: tags
+      },
+      cout_estime_local: {
+        gamme_prix: "Moyen",
+        estimation_m2_fcfa: "Sur devis spécifique",
+        justification_economique: "Le LLM recommande d'ajuster selon les prix de la quincaillerie locale. Rappelez au client que chercher trop de réduction entraîne un travail bâclé ('Mougou-mougou coûte cher')."
+      },
+      alternative_prosartisan: {
+        titre_vulgarise: `Diagnostic IA : ${detectedIssue}`,
+        methode_execution: `🌟 Approche Socio-Anthropologique (Côte d'Ivoire) :\n- Posture du Boss : En Afrique, le chef de chantier est garant de la sécurité familiale. Parlez au client avec respect ("Grand-frère", "Tonton") tout en assumant votre expertise technique.\n- Gestion du conflit : Ne critiquez jamais l'artisan précédent devant le client (préservez l'harmonie sociale), expliquez simplement que "les éléments ont travaillé".\n\n🛠️ Recommandation Technique :\n1. Traitez la zone touchée avec des dosages certifiés.\n2. Utilisez le sable de carrière bien lavé.\n3. Prenez le temps de faire le travail sans précipitation.`,
+        bouclier_autorite: `« Grand-frère (ou Patron), la maison c'est le refuge de la famille. Aujourd'hui, on remarque un petit souci d'humidité ou de fissure. On ne va pas jeter la pierre à celui qui a fait avant, le bâtiment travaille. Mon devoir de Boss de chantier, c'est de vous conseiller la meilleure solution technique pour que vous ayez la paix de l'esprit. Un bon traitement aujourd'hui avec les bons matériaux, ça vous évite de jeter l'argent par la fenêtre demain. On va gérer ça proprement. »`,
+        dosages_recommandes: [
+          { element: "Ciment local adapté", ratio: "Selon norme", unite_mesure_locale: "Sac" },
+          { element: "Sable propre", ratio: "Proportion standard", unite_mesure_locale: "Brouette (60L)" }
+        ],
+        materiaux_recommandes: [
+          { nom: "Matériaux certifiés", substitut_acceptable: "Adaptation selon stock", disponibilite: "Quincaillerie" }
+        ]
+      }
+    };
+  }
+
   // --- RENDU DU RÉSULTAT RAG MOBILE ---
   renderResult(doc) {
     const alt = doc.alternative_prosartisan;
     const cost = doc.cout_estime_local;
-    
+
     // Génération du Bouclier d'Autorité (Argumentaire Client localisé)
-    const clientPitch = `« Propriétaire, le mur présente des remontées d'humidité qui proviennent directement du sol. Si nous remettons simplement de la peinture, elle va cloquer et tomber d'ici la fin de la saison des pluies. Selon les normes de construction de l'État (Règles LBTP), il est obligatoire de créer une arase étanche pour stopper l'eau à la base. En posant un mortier dosé à 350kg avec un adjuvant hydrofuge SikaCim, nous assurons l'étanchéité complète. Votre bâtiment sera protégé de façon définitive sans avoir à refaire la peinture l'année prochaine. »`;
+    const clientPitch = alt.bouclier_autorite || `« Propriétaire, le mur présente des remontées d'humidité qui proviennent directement du sol. Si nous remettons simplement de la peinture, elle va cloquer et tomber d'ici la fin de la saison des pluies. Selon les normes de construction de l'État (Règles LBTP), il est obligatoire de créer une arase étanche pour stopper l'eau à la base. En posant un mortier dosé à 350kg avec un adjuvant hydrofuge SikaCim, nous assurons l'étanchéité complète. Votre bâtiment sera protégé de façon définitive sans avoir à refaire la peinture l'année prochaine. »`;
 
     this.dom.resultArea.innerHTML = `
       <!-- En-tête de la pathologie -->
       <div class="result-header-panel">
         <div class="result-tag">Pathologie : ${this.selectedPreset ? this.selectedPreset.title : "Humidité"}</div>
-        <div class="source-tag">${this.networkState === "offline" ? "Source : Cache SQLite" : "Source : Qdrant (PG)"}</div>
+        <div class="source-tag font-bold ${doc.metadata && doc.metadata.is_llm_fallback ? 'text-purple-400' : ''}">
+          ${doc.metadata && doc.metadata.is_llm_fallback ? `Assistant LLM (${doc.metadata.generated_for || 'Anonyme'})` : (this.networkState === "offline" ? "Source : Cache SQLite" : "Source : Qdrant (PG)")}
+        </div>
       </div>
 
       <!-- BOUCLIER D'AUTORITÉ -->
@@ -601,7 +629,7 @@ class ClientAppManager {
     // Écouteur du calculateur dynamique
     const areaInput = document.getElementById("calc-area-input");
     areaInput.addEventListener("input", () => this.recalculateDosages(areaInput.value, alt, cost));
-    
+
     // Premier calcul initial pour 10m²
     this.recalculateDosages(10, alt, cost);
   }
@@ -615,7 +643,7 @@ class ClientAppManager {
       this.speechUtterance = new SpeechSynthesisUtterance(text);
       this.speechUtterance.lang = "fr-FR";
       this.speechUtterance.rate = 0.95; // Un peu plus lent et articulé
-      
+
       this.speechUtterance.onstart = () => {
         this.setAudioState(true);
         this.log("voice", "Lecture audio de l'argumentaire en cours...");
@@ -653,7 +681,7 @@ class ClientAppManager {
   // --- CALCULATEUR DE DOSAGE DE CHANTIER EN DIRECT ---
   recalculateDosages(area, altData, costData) {
     const factor = parseFloat(area) / 10.0; // Le dosage initial est donné pour ~10m²
-    
+
     const listContainer = document.getElementById("dosage-checklist");
     if (!listContainer) return;
 
@@ -662,7 +690,7 @@ class ClientAppManager {
       // Extraire le nombre du ratio
       const numMatch = d.ratio.match(/^([0-9.]+)/);
       let newRatio = d.ratio;
-      
+
       if (numMatch) {
         const value = parseFloat(numMatch[1]);
         const calculatedValue = (value * factor).toFixed(1);
@@ -690,14 +718,14 @@ class ClientAppManager {
     // Extraire les prix minimum et maximum du texte d'estimation
     const priceMatch = costData.estimation_m2_fcfa.match(/([0-9\s]+)-\s*([0-9\s]+)/);
     let calculatedCostText = "Selon devis";
-    
+
     if (priceMatch) {
       const minPrice = parseInt(priceMatch[1].replace(/\s/g, ""));
       const maxPrice = parseInt(priceMatch[2].replace(/\s/g, ""));
-      
+
       const calcMin = Math.round(minPrice * factor);
       const calcMax = Math.round(maxPrice * factor);
-      
+
       calculatedCostText = `${calcMin.toLocaleString()} - ${calcMax.toLocaleString()} FCFA`;
     } else {
       // Si format diffèrent (ex: 8000 - 12000 FCFA par m²)
@@ -714,11 +742,11 @@ class ClientAppManager {
   // --- CONFIGURATION DE LA LATENCE ET OFFLINE ---
   setNetwork(state) {
     this.networkState = state;
-    
+
     // Style du badge réseau
     this.dom.badgeNetwork.classList.remove("offline", "latency-3g");
     this.dom.badgeNetwork.textContent = state.toUpperCase();
-    
+
     if (state === "offline") {
       this.dom.badgeNetwork.classList.add("offline");
       this.dom.badgeNetwork.textContent = "OFFLINE";
@@ -727,7 +755,7 @@ class ClientAppManager {
       this.dom.badgeNetwork.classList.add("latency-3g");
       this.dom.badgeNetwork.textContent = "3G LENTE";
       this.log("network", "Réseau restreint. Activation de la latence 3G dégradée.");
-      
+
       // Essayer de synchroniser la queue si on repasse en ligne
       this.syncQueue();
     } else {
@@ -738,10 +766,10 @@ class ClientAppManager {
 
   async syncQueue() {
     if (this.offlineQueue.length === 0) return;
-    
+
     this.log("network", `Réseau rétabli. Synchronisation de ${this.offlineQueue.length} diagnostics cumulés hors-ligne...`);
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     this.offlineQueue = [];
     this.log("network", "Synchronisation avec le cloud réussie.");
     this.renderConsoleLogs();
@@ -752,18 +780,18 @@ class ClientAppManager {
     const canvas = this.dom.mapCanvas;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    
+
     // Ajuster taille logique
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
-    
+
     const w = canvas.width;
     const h = canvas.height;
-    
+
     // Fond sombre bleuâtre
     ctx.fillStyle = "#0c1222";
     ctx.fillRect(0, 0, w, h);
-    
+
     // Tracer des quadrillages
     ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
     ctx.lineWidth = 1;
@@ -779,51 +807,51 @@ class ClientAppManager {
       ctx.lineTo(w, y);
       ctx.stroke();
     }
-    
+
     // Tracer des cercles concentriques de radar/recherche
     ctx.strokeStyle = "rgba(6, 182, 212, 0.15)";
     ctx.beginPath();
-    ctx.arc(w/2, h/2, 40, 0, Math.PI*2);
+    ctx.arc(w / 2, h / 2, 40, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(w/2, h/2, 90, 0, Math.PI*2);
+    ctx.arc(w / 2, h / 2, 90, 0, Math.PI * 2);
     ctx.stroke();
-    
+
     // Tracer les routes principales fictives de Yopougon / Koumassi
     ctx.strokeStyle = "rgba(255,255,255,0.06)";
     ctx.lineWidth = 6;
     ctx.lineCap = "round";
     // Route 1
     ctx.beginPath();
-    ctx.moveTo(20, h/2 - 20);
-    ctx.lineTo(w - 20, h/2 + 30);
+    ctx.moveTo(20, h / 2 - 20);
+    ctx.lineTo(w - 20, h / 2 + 30);
     ctx.stroke();
     // Route 2
     ctx.beginPath();
-    ctx.moveTo(w/3, 15);
-    ctx.lineTo(w*2/3, h - 15);
+    ctx.moveTo(w / 3, 15);
+    ctx.lineTo(w * 2 / 3, h - 15);
     ctx.stroke();
-    
+
     // Placer les quincailleries sous forme de pins
     const stores = [
-      { name: "Quincaillerie Siporex (Yopougon)", x: w/2 - 40, y: h/2 - 30, stock: "En Stock (CIMAF CPJ 42.5)", color: "var(--neon-cyan)" },
-      { name: "Quincaillerie de la Gare (Koumassi)", x: w/2 + 60, y: h/2 + 20, stock: "En Stock (SikaCim)", color: "var(--neon-purple)" },
-      { name: "Dépôt Ciment Zone Ind.", x: w/2 - 80, y: h/2 + 30, stock: "CPJ 42.5 & 32.5", color: "var(--neon-emerald)" }
+      { name: "Quincaillerie Siporex (Yopougon)", x: w / 2 - 40, y: h / 2 - 30, stock: "En Stock (CIMAF CPJ 42.5)", color: "var(--neon-cyan)" },
+      { name: "Quincaillerie de la Gare (Koumassi)", x: w / 2 + 60, y: h / 2 + 20, stock: "En Stock (SikaCim)", color: "var(--neon-purple)" },
+      { name: "Dépôt Ciment Zone Ind.", x: w / 2 - 80, y: h / 2 + 30, stock: "CPJ 42.5 & 32.5", color: "var(--neon-emerald)" }
     ];
-    
+
     stores.forEach(s => {
       // Effet de halo clignotant
       ctx.fillStyle = s.color === "var(--neon-cyan)" ? "rgba(6, 182, 212, 0.2)" : (s.color === "var(--neon-purple)" ? "rgba(168, 85, 247, 0.2)" : "rgba(16, 185, 129, 0.2)");
       ctx.beginPath();
-      ctx.arc(s.x, s.y, 10, 0, Math.PI*2);
+      ctx.arc(s.x, s.y, 10, 0, Math.PI * 2);
       ctx.fill();
-      
+
       // Pin central
       ctx.fillStyle = s.color === "var(--neon-cyan)" ? "#06b6d4" : (s.color === "var(--neon-purple)" ? "#a855f7" : "#10b981");
       ctx.beginPath();
-      ctx.arc(s.x, s.y, 4, 0, Math.PI*2);
+      ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
       ctx.fill();
-      
+
       // Texte du magasin
       ctx.fillStyle = "#f8fafc";
       ctx.font = "bold 8px sans-serif";
@@ -836,33 +864,33 @@ class ClientAppManager {
     // Point utilisateur (Maçon)
     ctx.fillStyle = "rgba(239, 68, 68, 0.3)";
     ctx.beginPath();
-    ctx.arc(w/2, h/2, 12, 0, Math.PI*2);
+    ctx.arc(w / 2, h / 2, 12, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#ef4444";
     ctx.beginPath();
-    ctx.arc(w/2, h/2, 4, 0, Math.PI*2);
+    ctx.arc(w / 2, h / 2, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "white";
     ctx.font = "bold 6px sans-serif";
-    ctx.fillText("Moi (Chantier)", w/2 - 18, h/2 - 15);
+    ctx.fillText("Moi (Chantier)", w / 2 - 18, h / 2 - 15);
   }
 
   // --- JOURNALISATION SUR LE TERMINAL MOBILE ---
   log(category, message) {
     const time = new Date().toLocaleTimeString();
-    
+
     const line = document.createElement("div");
     line.className = "console-line";
-    
+
     let colorClass = "text-slate-400";
     if (category === "voice") colorClass = "text-purple-400";
     if (category === "image") colorClass = "text-cyan-400";
     if (category === "network") colorClass = "text-orange-400";
     if (category === "rag") colorClass = "text-emerald-400";
     if (category === "offline-queue") colorClass = "text-rose-400";
-    
+
     line.innerHTML = `<span class="time">[${time}]</span> <span class="tag ${colorClass}">[${category.toUpperCase()}]</span> <span>${message}</span>`;
-    
+
     this.dom.consoleLogs.appendChild(line);
     this.dom.consoleLogs.scrollTop = this.dom.consoleLogs.scrollHeight;
   }
@@ -877,11 +905,11 @@ class ClientAppManager {
   // --- CHATBOT BTP ---
   initChat() {
     if (this.chatInitialized) return;
-    
+
     // Message de bienvenue initial
     this.chatHistory = [];
     this.renderChatMessage("bot", "Bonjour Boss ! Je suis votre assistant BTP ProsArtisan. Comment puis-je vous aider aujourd'hui ? Vous pouvez me poser des questions sur les dosages de dalles (ciment CPJ 42.5), les enduits extérieurs (ciment CPJ 32.5), le rôle de l'hydrofuge SikaCim, ou les caractéristiques des sables.");
-    
+
     // Pilules de suggestions
     const suggestions = [
       { text: "Quel ciment pour les dalles ?", query: "Quel ciment pour couler une dalles de structure ?" },
@@ -889,11 +917,11 @@ class ClientAppManager {
       { text: "Comment doser le SikaCim ?", query: "Quel est le dosage de l'hydrofuge SikaCim ?" },
       { text: "Sable de lagune ou carrière ?", query: "Quelle est la différence entre sable de lagune et sable de carriere ?" }
     ];
-    
+
     this.dom.chatSuggestions.innerHTML = suggestions.map(s => `
       <button class="suggestion-pill" data-query="${s.query}">${s.text}</button>
     `).join("");
-    
+
     // Événements des suggestions
     this.dom.chatSuggestions.querySelectorAll(".suggestion-pill").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -902,16 +930,16 @@ class ClientAppManager {
         this.sendChat();
       });
     });
-    
+
     // Événements d'envoi
     this.dom.btnSendChat.addEventListener("click", () => this.sendChat());
     this.dom.chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") this.sendChat();
     });
-    
+
     // Événement microphone chat
     this.setupChatMic();
-    
+
     this.chatInitialized = true;
   }
 
@@ -963,33 +991,33 @@ class ClientAppManager {
   async sendChat() {
     const text = this.dom.chatInput.value.trim();
     if (!text) return;
-    
+
     // Vider l'input
     this.dom.chatInput.value = "";
-    
+
     // Rendre le message utilisateur
     this.renderChatMessage("user", text);
     this.chatHistory.push({ sender: "user", text: text });
-    
+
     // Indicateur d'écriture bot
     const typingBubbleId = this.renderChatTyping();
-    
+
     // Simuler un délai de traitement conversationnel
     let delay = 600;
     if (this.networkState === "3g") {
       delay = 2000;
       this.log("network", "Chatbot : Envoi de la requête sur le réseau 3G...");
     }
-    
+
     await new Promise(resolve => setTimeout(resolve, delay));
-    
+
     let botResponse = "";
     let sources = [];
-    
+
     if (this.networkState === "offline") {
       // Résilience Hors-ligne : Utilisation d'une base de réponses locale simple
       this.log("network", "Chatbot Hors-ligne : Génération de la réponse depuis le dictionnaire local.");
-      
+
       const localKB = {
         "dalle": "Pour le béton de structure (dalles, poteaux), le dosage standard LBTP/BNETD est de 350 kg/m³ de ciment de classe CPJ 42.5. Pour 1 m³ de béton, cela équivaut à 7 sacs de ciment de 50 kg, 400 L de sable de carrière propre et 800 L de gravier concassé 15/25, avec environ 175 à 180 L d'eau propre.",
         "poteau": "Pour les poteaux de structure, le ciment CPJ 42.5 est requis avec du ferraillage HA. Le dosage recommandé est de 350 kg/m³. Piquez bien le béton dans le coffrage pour éliminer les bulles d'air.",
@@ -1001,7 +1029,7 @@ class ClientAppManager {
         "32.5": "Le ciment CPJ 32.5 convient pour les travaux courants de maçonnerie, enduits et pose de parpaings. Il ne doit pas être utilisé pour couler des dalles porteuses ou des poteaux.",
         "42.5": "Le ciment CPJ 42.5 est un ciment haute résistance obligatoire pour les ouvrages en béton armé et les arases étanches de soubassement."
       };
-      
+
       const q = text.toLowerCase();
       let matchedKey = null;
       for (const key in localKB) {
@@ -1010,7 +1038,7 @@ class ClientAppManager {
           break;
         }
       }
-      
+
       if (matchedKey) {
         botResponse = localKB[matchedKey] + " *(Réponse du cache local en mode hors-ligne)*";
       } else {
@@ -1032,29 +1060,29 @@ class ClientAppManager {
         botResponse = "Désolé Boss, une erreur est survenue lors de la communication avec le serveur de chat.";
       }
     }
-    
+
     // Supprimer l'indicateur d'écriture
     this.removeChatTyping(typingBubbleId);
-    
+
     // Rendre la réponse du bot
     this.renderChatMessage("bot", botResponse, sources);
     this.chatHistory.push({ sender: "bot", text: botResponse });
-    
+
     this.log("rag", `Chatbot : Réponse fournie pour "${text.substring(0, 30)}..."`);
   }
 
   renderChatMessage(sender, text, sources = []) {
     const bubble = document.createElement("div");
     bubble.className = `chat-bubble ${sender}`;
-    
+
     // Remplacement simple de retours à la ligne par <br> et markdown gras simple
     let formattedText = text
       .replace(/\n/g, "<br>")
       .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
       .replace(/\*(.*?)\*/g, "<em>$1</em>");
-      
+
     bubble.innerHTML = formattedText;
-    
+
     this.dom.chatMessages.appendChild(bubble);
     this.dom.chatMessages.scrollTop = this.dom.chatMessages.scrollHeight;
   }

@@ -252,7 +252,7 @@ class APIDatabaseClient {
     try {
       const res = await this.apiFetch("/api/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.getHeaders(),
         body: JSON.stringify({
           tags: queryTags,
           filters: metadataFilters
