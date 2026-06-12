@@ -19,6 +19,9 @@ from google import genai
 PORT = int(os.environ.get("PORT", 8000))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+FILESHARE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fileshare")
+os.makedirs(FILESHARE_DIR, exist_ok=True)
+
 # --- CONFIGURATION DE CONNEXION POSTGRESQL ---
 PG_HOST = os.environ.get("PG_HOST", "localhost")
 PG_PORT = int(os.environ.get("PG_PORT", 5432))
@@ -136,6 +139,18 @@ def init_database():
                 password_hash VARCHAR(255) NOT NULL,
                 reset_token VARCHAR(255),
                 reset_token_expiry TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL
+            );
+            """)
+
+            # Table des fichiers joints
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS attachments (
+                id VARCHAR(100) PRIMARY KEY,
+                original_filename VARCHAR(255) NOT NULL,
+                extension VARCHAR(20) NOT NULL,
+                file_link VARCHAR(500) NOT NULL,
+                uploaded_by VARCHAR(255),
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL
             );
             """)
@@ -488,9 +503,18 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
         import posixpath
         path = posixpath.normpath(path)
         words = path.split('/')
-        words = filter(None, words)
+        words = list(filter(None, words))
         
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        if words and words[0] == "fileshare":
+            local_path = os.path.join(base_dir, "backend", "fileshare")
+            for word in words[1:]:
+                if os.path.dirname(word) or word in (os.curdir, os.pardir):
+                    continue
+                local_path = os.path.join(local_path, word)
+            return local_path
+            
         frontend_dir = os.path.join(base_dir, "frontend")
         
         local_path = frontend_dir
@@ -1325,6 +1349,66 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
             finally:
                 if conn:
+                    conn.close()
+            return
+
+        # POST /api/upload (Sauvegarde dans Fileshare et BD)
+        elif path == "/api/upload":
+            try:
+                import base64
+                import uuid
+                data = json.loads(body)
+                filename = data.get("filename", "")
+                b64_content = data.get("content", "")
+                
+                if not filename or not b64_content:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "filename and content (base64) are required"}).encode("utf-8"))
+                    return
+                
+                ext = ""
+                if "." in filename:
+                    ext = filename.split(".")[-1].lower()
+                
+                file_id = str(uuid.uuid4())
+                safe_filename = f"{file_id}.{ext}" if ext else file_id
+                file_path = os.path.join(FILESHARE_DIR, safe_filename)
+                
+                file_data = base64.b64decode(b64_content)
+                with open(file_path, "wb") as f:
+                    f.write(file_data)
+                
+                file_link = f"/fileshare/{safe_filename}"
+                now_str = datetime.utcnow().isoformat() + "Z"
+                
+                conn = psycopg2.connect(
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                    dbname=PG_DB
+                )
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO attachments (id, original_filename, extension, file_link, uploaded_by, created_at) VALUES (%s, %s, %s, %s, %s, %s);",
+                        (file_id, filename, ext, file_link, user, now_str)
+                    )
+                    conn.commit()
+                
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "id": file_id, "file_link": file_link}).encode("utf-8"))
+            except Exception as e:
+                print(f"Erreur upload : {e}")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if 'conn' in locals() and conn:
                     conn.close()
             return
 
