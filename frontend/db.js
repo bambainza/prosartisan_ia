@@ -248,14 +248,16 @@ class APIDatabaseClient {
   /**
    * Effectue la recherche hybride sémantique + filtres via le serveur Python SQLite
    */
-  async hybridSearch(queryTags, metadataFilters = {}) {
+  async hybridSearch(queryTags, metadataFilters = {}, imageB64 = null, imageUrl = null) {
     try {
       const res = await this.apiFetch("/api/search", {
         method: "POST",
         headers: this.getHeaders(),
         body: JSON.stringify({
           tags: queryTags,
-          filters: metadataFilters
+          filters: metadataFilters,
+          image_b64: imageB64,
+          image_url: imageUrl
         })
       });
       return await res.json();

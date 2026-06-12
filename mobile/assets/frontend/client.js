@@ -253,6 +253,7 @@ class ClientAppManager {
       this.dom.screenHome.classList.remove("hidden");
       // Réinitialiser la zone d'upload
       this.selectedPreset = null;
+      this.selectedImageBase64 = null;
       this.renderPresets();
       this.dom.uploadInput.value = "";
       this.dom.uploadZone.innerHTML = `<span class="upload-icon">🧱</span>
@@ -376,6 +377,7 @@ class ClientAppManager {
     reader.onload = (e) => {
       this.dom.uploadZone.innerHTML = `<img src="${e.target.result}" class="w-full h-32 object-cover rounded-xl" alt="Aperçu" />
                                       <div class="text-[10px] text-cyan-400 mt-2 font-bold">${file.name}</div>`;
+      this.selectedImageBase64 = e.target.result.split(',')[1];
     };
     reader.readAsDataURL(file);
 
@@ -412,8 +414,34 @@ class ClientAppManager {
     this.dom.screenHome.classList.add("hidden");
     this.dom.loaderPanel.classList.remove("hidden");
 
-    const tags = this.selectedPreset ? this.selectedPreset.tags : ["remontee_capillaire"];
+    let tags = this.selectedPreset ? [...this.selectedPreset.tags] : ["remontee_capillaire"];
     const textContext = this.dom.dictationInput.value;
+
+    // Analyse du texte saisi par l'artisan pour orienter les tags de diagnostic RAG
+    if (textContext) {
+      const textLower = textContext.toLowerCase();
+      const hasFissure = /fissur|linteau|poteau|poutre|fer|armature|béton|structure/i.test(textLower);
+      const hasInfiltration = /infiltration|dalle|terrasse|toit|fuite|pluie|etanche/i.test(textLower);
+      const hasHumidite = /humid|salpêtre|peinture|bas|capill|arase/i.test(textLower);
+
+      if (this.selectedPreset && this.selectedPreset.id === "custom-upload") {
+        const newTags = [];
+        if (hasFissure) newTags.push("fissure_structure", "linteau_beton", "ferraillage");
+        if (hasInfiltration) newTags.push("infiltration_dalle", "toit_terrasse", "etancheite_defaillante");
+        if (hasHumidite || newTags.length === 0) newTags.push("remontee_capillaire", "humidite_bas", "salpetre");
+        tags = newTags;
+      }
+    }
+
+    let imageB64 = null;
+    let imageUrl = null;
+    if (this.selectedPreset) {
+      if (this.selectedPreset.id === "custom-upload") {
+        imageB64 = this.selectedImageBase64;
+      } else {
+        imageUrl = this.selectedPreset.image;
+      }
+    }
 
     // Simuler le délai réseau selon le mode sélectionné
     let delay = 400;
@@ -458,7 +486,7 @@ class ClientAppManager {
         const list = await dbInstance.hybridSearch(tags, {
           maxBudget: "Moyen",
           onlyHardwareStore: false
-        });
+        }, imageB64, imageUrl);
         if (list && list.length > 0) {
           resultDoc = list[0];
         }
@@ -537,7 +565,20 @@ class ClientAppManager {
     const cost = doc.cout_estime_local;
 
     // Génération du Bouclier d'Autorité (Argumentaire Client localisé)
-    const clientPitch = alt.bouclier_autorite || `« Propriétaire, le mur présente des remontées d'humidité qui proviennent directement du sol. Si nous remettons simplement de la peinture, elle va cloquer et tomber d'ici la fin de la saison des pluies. Selon les normes de construction de l'État (Règles LBTP), il est obligatoire de créer une arase étanche pour stopper l'eau à la base. En posant un mortier dosé à 350kg avec un adjuvant hydrofuge SikaCim, nous assurons l'étanchéité complète. Votre bâtiment sera protégé de façon définitive sans avoir à refaire la peinture l'année prochaine. »`;
+    let clientPitch = alt.bouclier_autorite || alt.bouclier_client || alt.pitch;
+    
+    if (!clientPitch) {
+      const typeOuvrage = (doc.metadata && doc.metadata.type_ouvrage) ? doc.metadata.type_ouvrage.toLowerCase() : "";
+      const tagsStr = (doc.metadata && doc.metadata.tags_pathologies) ? doc.metadata.tags_pathologies.join(" ") : "";
+      
+      if (typeOuvrage === "etancheite" || tagsStr.includes("infiltration") || tagsStr.includes("terrasse")) {
+        clientPitch = `« Tonton, quand la dalle du toit coule pendant la saison des pluies, l'eau s'infiltre dans le béton et fait rouiller les fers de la structure. À la longue, le béton éclate et le plafond risque de s'effondrer. Repeindre le salon ne sert à rien si on ne bloque pas l'eau par le haut. Selon les règles de l'art, il faut appliquer une étanchéité liquide SEL multicouche armée en fibre de verre. C'est le seul moyen de protéger définitivement votre investissement et votre famille. »`;
+      } else if (typeOuvrage === "poteau-poutre" || tagsStr.includes("fissure") || tagsStr.includes("linteau")) {
+        clientPitch = `« Boss, le linteau c'est comme le pilier de la famille. S'il y a une fissure structurelle au-dessus de la porte, c'est que le fer ou le ciment utilisé était trop faible. La norme BNETD exige du fer HA 10 et du ciment CPJ 42.5. Si on met du fer de 8 ou du ciment CPJ 32.5, le mur va se fendre. Faisons un ouvrage propre qui va durer pour la sécurité de votre foyer. »`;
+      } else {
+        clientPitch = `« Propriétaire, le mur présente des remontées d'humidité qui proviennent directement du sol. Si nous remettons simplement de la peinture, elle va cloquer et tomber d'ici la fin de la saison des pluies. Selon les normes de construction de l'État (Règles LBTP), il est obligatoire de créer une arase étanche pour stopper l'eau à la base. En posant un mortier dosé à 350kg avec un adjuvant hydrofuge SikaCim, nous assurons l'étanchéité complète. Votre bâtiment sera protégé de façon définitive sans avoir à refaire la peinture l'année prochaine. »`;
+      }
+    }
 
     this.dom.resultArea.innerHTML = `
       <!-- En-tête de la pathologie -->

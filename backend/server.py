@@ -15,6 +15,8 @@ import re
 from urllib.parse import urlparse
 from datetime import datetime
 from google import genai
+from google.genai import types
+
 
 PORT = int(os.environ.get("PORT", 8000))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -155,6 +157,41 @@ def init_database():
             );
             """)
 
+            # Tables pour la configuration des métiers, catégories et contextes
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS professions (
+                id VARCHAR(50) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT
+            );
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS categories (
+                id VARCHAR(50) PRIMARY KEY,
+                profession_id VARCHAR(50) REFERENCES professions(id),
+                name VARCHAR(255) NOT NULL,
+                description TEXT
+            );
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contexts (
+                id VARCHAR(50) PRIMARY KEY,
+                category_id VARCHAR(50) REFERENCES categories(id),
+                tags TEXT NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                source VARCHAR(255) NOT NULL,
+                execution TEXT NOT NULL,
+                pitch TEXT NOT NULL,
+                dosages JSONB,
+                materials JSONB,
+                price VARCHAR(255),
+                justification TEXT,
+                type_ouvrage VARCHAR(255)
+            );
+            """)
+
             # Insertion de l'utilisateur admin par défaut si la table est vide
             cursor.execute("SELECT COUNT(*) FROM users;")
             if cursor.fetchone()[0] == 0:
@@ -253,11 +290,95 @@ def init_database():
                 )
                 conn.commit()
 
-            # Vérifier si Production est vide
-            cursor.execute("SELECT COUNT(*) FROM production_items;")
-            if cursor.fetchone()[0] == 0:
-                print("Insertion des données de démo initiales dans PostgreSQL (Production)...")
-                prod1_json = {
+            # Vérifier et insérer les données de démo initiales dans PostgreSQL (Production)
+            cursor.execute("SELECT id FROM production_items;")
+            existing_prod_ids = [r[0] for r in cursor.fetchall()]
+
+            # prod-101 (humidité)
+            if "prod-101" not in existing_prod_ids:
+                print("Insertion du jeu de données prod-101 (Humidité) dans PostgreSQL (Production)...")
+                prod101_json = {
+                    "id": "prod-101",
+                    "norme_origine": {
+                        "source": "LBTP",
+                        "reference_article": "SECTION 4.2",
+                        "titre_original": "Étanchéité des murs enterrés et soubassements",
+                        "texte_brut": "L'arase étanche doit être réalisée au niveau de la coupure de capillarité à l'aide d'une membrane bitumineuse conforme à la norme NF EN 13969 soudée à chaud..."
+                    },
+                    "alternative_prosartisan": {
+                        "titre_vulgarise": "Réalisation d'une coupure de capillarité (arase étanche) sur parpaings de 15",
+                        "methode_execution": "Nettoyer parfaitement la tête de la fondation (pas de terre). Poser un mortier de ciment dosé à 350kg/m3 mélangé avec un sachet d'hydrofuge de masse SikaCim par sac de ciment. Le mortier doit être appliqué sur une épaisseur de 2 cm minimum. Bien lisser à la taloche. Poser le premier rang de parpaings pendant que le mortier est encore frais. Pour un traitement curatif de mur existant : piquer l'enduit abîmé sur 50 cm de hauteur, brosser les joints, et refaire un enduit serré au ciment CPJ 42.5 hydrofugé au SikaCim.",
+                        "dosages_recommandes": [
+                            { "element": "Ciment CPJ 42.5 (CIMAF / LafargeHolcim)", "ratio": "1 sac (50kg)", "unite_mesure_locale": "Sac" },
+                            { "element": "Sable de carrière propre (non salé)", "ratio": "2 brouettes de 60L rases", "unite_mesure_locale": "Brouette (60L)" },
+                            { "element": "Adjuvant SikaCim (ou Super Sikalite)", "ratio": "1 sachet (ou 1 pot de 1kg)", "unite_mesure_locale": "Sac" }
+                        ],
+                        "materiaux_recommandes": [
+                            { "nom": "Ciment CPJ 42.5", "substitut_acceptable": "CPJ 32.5 (Moins recommandé)", "disponibilite": "Quincaillerie" },
+                            { "nom": "Hydrofuge de masse SikaCim", "substitut_acceptable": "Super Sikalite en poudre", "disponibilite": "Quincaillerie" },
+                            { "nom": "Sable de carrière", "substitut_acceptable": "Sable de lagune lavé", "disponibilite": "Quincaillerie" }
+                        ]
+                    },
+                    "cout_estime_local": {
+                        "gamme_prix": "Faible",
+                        "estimation_m2_fcfa": "4 500 - 6 000 FCFA par mètre linéaire",
+                        "justification_economique": "L'achat d'un sachet de SikaCim (environ 1 500 FCFA) évite au client de devoir refaire la peinture de sa maison chaque année. C'est un argument de vente solide pour convaincre le client d'acheter le produit."
+                    },
+                    "metadata": {
+                        "tags_pathologies": ["remontee_capillaire", "humidite_bas", "salpetre"],
+                        "type_ouvrage": "Etancheite"
+                    }
+                }
+                cursor.execute(
+                    "INSERT INTO production_items (id, generated_json, tags) VALUES (%s, %s, %s);",
+                    ("prod-101", psycopg2.extras.Json(prod101_json), "remontee_capillaire,humidite_bas,salpetre")
+                )
+
+            # prod-102 (linteau)
+            if "prod-102" not in existing_prod_ids:
+                print("Insertion du jeu de données prod-102 (Linteau) dans PostgreSQL (Production)...")
+                prod102_json = {
+                    "id": "prod-102",
+                    "norme_origine": {
+                        "source": "BNETD",
+                        "reference_article": "SECTION 7.8",
+                        "titre_original": "Ferraillage des éléments porteurs (Linteaux)",
+                        "texte_brut": "Tout linteau franchissant une ouverture supérieure à 1.20m doit posséder une armature de chaînage minimale constituée de 4 cadres filants HA 12..."
+                    },
+                    "alternative_prosartisan": {
+                        "titre_vulgarise": "Ferraillage et coulage de linteau pour ouverture (> 1.20m)",
+                        "methode_execution": "Façonner l'armature avec 4 barres de fer de 10 (HA 10) filantes. Lier ces barres avec des cadres en fer de 6 (HA 6) espacés de 15 cm. Veiller à ce que l'armature soit calée à 3 cm du coffrage bois en utilisant des cales en mortier (pas de contact direct métal-bois pour éviter la rouille). Utiliser exclusivement du ciment CPJ 42.5 pour le béton de structure. Mélanger vigoureusement et piquer le béton fraîchement coulé avec une barre de fer pour éliminer les bulles d'air (vibration manuelle). Laisser sécher 14 jours minimum avant de décoffrer.",
+                        "dosages_recommandes": [
+                            { "element": "Ciment CPJ 42.5 (CIMAF / LafargeHolcim)", "ratio": "1 sac (50kg)", "unite_mesure_locale": "Sac" },
+                            { "element": "Sable de carrière propre", "ratio": "1.5 brouettes de 60L", "unite_mesure_locale": "Brouette (60L)" },
+                            { "element": "Gravier 15/25 de concassage", "ratio": "2.5 brouettes", "unite_mesure_locale": "Brouette (60L)" },
+                            { "element": "Fers à béton HA 10 et HA 6", "ratio": "Selon longueur de l'ouverture + 40cm d'ancrage de chaque côté", "unite_mesure_locale": "Pelle" }
+                        ],
+                        "materiaux_recommandes": [
+                            { "nom": "Ciment CPJ 42.5", "substitut_acceptable": "Aucun substitut pour éléments porteurs structuraux", "disponibilite": "Quincaillerie" },
+                            { "nom": "Fers de construction HA 10 et HA 6", "substitut_acceptable": "Fers importés certifiés", "disponibilite": "Quincaillerie" },
+                            { "nom": "Gravier concassé 15/25", "substitut_acceptable": "Gravier de lagune lavé", "disponibilite": "Zone Industrielle" }
+                        ]
+                    },
+                    "cout_estime_local": {
+                        "gamme_prix": "Moyen",
+                        "estimation_m2_fcfa": "15 000 - 25 000 FCFA par linteau standard",
+                        "justification_economique": "Le coût est justifié par l'achat de ciment CPJ 42.5 haute résistance et le ferraillage de 10 mm. Expliquer au client que poser du fer de 8 mm ou du ciment CPJ 32.5 entraînera des fissures structurelles et l'effondrement à terme de sa maçonnerie."
+                    },
+                    "metadata": {
+                        "tags_pathologies": ["fissure_structure", "linteau_beton", "ferraillage"],
+                        "type_ouvrage": "Poteau-Poutre"
+                    }
+                }
+                cursor.execute(
+                    "INSERT INTO production_items (id, generated_json, tags) VALUES (%s, %s, %s);",
+                    ("prod-102", psycopg2.extras.Json(prod102_json), "fissure_structure,linteau_beton,ferraillage")
+                )
+
+            # prod-201 (infiltration)
+            if "prod-201" not in existing_prod_ids:
+                print("Insertion du jeu de données prod-201 (Infiltration) dans PostgreSQL (Production)...")
+                prod201_json = {
                     "id": "prod-201",
                     "norme_origine": {
                         "source": "RE-CIM",
@@ -289,8 +410,94 @@ def init_database():
                 }
                 cursor.execute(
                     "INSERT INTO production_items (id, generated_json, tags) VALUES (%s, %s, %s);",
-                    ("prod-201", psycopg2.extras.Json(prod1_json), "infiltration_dalle,toit_terrasse,etancheite_defaillante")
+                    ("prod-201", psycopg2.extras.Json(prod201_json), "infiltration_dalle,toit_terrasse,etancheite_defaillante")
                 )
+            conn.commit()
+
+            # --- SEEDS POUR LES PROFESSIONS, CATEGORIES ET CONTEXTES ---
+            cursor.execute("SELECT COUNT(*) FROM professions;")
+            if cursor.fetchone()[0] == 0:
+                print("Insertion des données de démo initiales pour métiers et contextes...")
+                
+                # Professions
+                cursor.execute("INSERT INTO professions (id, name, description) VALUES (%s, %s, %s);", ("prof-1", "Maçonnerie", "Travaux de maçonnerie générale et gros oeuvre."))
+                cursor.execute("INSERT INTO professions (id, name, description) VALUES (%s, %s, %s);", ("prof-2", "Mécanique", "Entretien et réparation de véhicules."))
+                
+                # Categories
+                cursor.execute("INSERT INTO categories (id, profession_id, name, description) VALUES (%s, %s, %s, %s);", ("cat-mac-1", "prof-1", "Humidité et Etanchéité", "Traitement des remontées capillaires et infiltrations."))
+                cursor.execute("INSERT INTO categories (id, profession_id, name, description) VALUES (%s, %s, %s, %s);", ("cat-mac-2", "prof-1", "Structure et Elévation", "Linteaux, poteaux, poutres, murs."))
+                cursor.execute("INSERT INTO categories (id, profession_id, name, description) VALUES (%s, %s, %s, %s);", ("cat-mec-1", "prof-2", "Moteur", "Diagnostic et réparation moteur."))
+                cursor.execute("INSERT INTO categories (id, profession_id, name, description) VALUES (%s, %s, %s, %s);", ("cat-mec-2", "prof-2", "Freinage", "Système de freinage."))
+                
+                # Contextes
+                # Context 1: Arase (Maçonnerie)
+                cursor.execute("""
+                    INSERT INTO contexts (id, category_id, tags, title, source, execution, pitch, dosages, materials, price, justification, type_ouvrage)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """, (
+                    "ctx-1", "cat-mac-1", "remontee_capillaire,humidite_bas,salpetre,humidite,arase,soubassement",
+                    "Traitement des remontées d'humidité et salpêtre (Arase Hydrofuge)",
+                    "Norme LBTP / RE-CIM Section 5.4 - Barrière d'étanchéité",
+                    "1. Piquer l'enduit abîmé ou contaminé sur 50 cm au-dessus des traces de salpêtre.\n2. Laver le mur à l'eau douce pour enlever le sel capillaire.\n3. Mouiller abondamment le mur en parpaings avant d'appliquer le gobetis pour éviter les décollements ('enduit brûlé').\n4. Préparer un mortier de ciment CPJ 42.5 dosé à 350 kg/m³ (1 sac de 50 kg pour 2 brouettes de sable de carrière propre).\n5. Incorporer 1 sachet de SikaCim (ou Super Sikalite) par sac de ciment dans l'eau de gâchage.\n6. Appliquer l'enduit serré en deux passes croisées de 10 mm d'épaisseur.",
+                    "« Vieux Père, le bas du mur est en train de gâter à cause de l'humidité qui monte du sol. C'est comme la pluie : si on ne met pas de chapeau, on est mouillé. Le mur a besoin d'un bouclier. Selon la norme LBTP pour la sécurité de la maison, il faut faire une coupure de capillarité. Si on repeint directement sans arase étanche avec hydrofuge SikaCim, la peinture va encore sauter dans 3 mois et ce sera de l'argent jeté. Pour honorer votre investissement et protéger la famille, voici le dosage et la méthode certifiée. Que Dieu bénisse le travail de nos mains. »",
+                    psycopg2.extras.Json([{"element": "Ciment CPJ 42.5 (CIMAF/Lafarge)", "ratio": "1 sac (50kg)", "unite_mesure_locale": "Sac"}, {"element": "Sable de carrière propre", "ratio": "2 brouettes de 60L", "unite_mesure_locale": "Brouette (60L)"}, {"element": "Adjuvant hydrofuge SikaCim", "ratio": "1 sachet (1kg)", "unite_mesure_locale": "Sachet (1kg)"}]),
+                    psycopg2.extras.Json([{"nom": "Ciment CPJ 42.5", "substitut_acceptable": "Aucun substitut pour arase", "disponibilite": "Quincaillerie"}, {"nom": "SikaCim", "substitut_acceptable": "Super Sikalite", "disponibilite": "Quincaillerie"}, {"nom": "Sable de carrière", "substitut_acceptable": "Sable de lagune lavé", "disponibilite": "Quincaillerie"}]),
+                    "4 500 - 6 500 FCFA par mètre linéaire",
+                    "L'achat d'un sachet d'hydrofuge (environ 1 500 FCFA) protège la peinture et le plâtre intérieur. En Côte d'Ivoire, les pluies de juin sont très fortes. Ne pas faire d'arase étanche, c'est s'exposer à refaire les enduits chaque année, ce qui coûte 5 fois plus cher.",
+                    "Arase"
+                ))
+                
+                # Context 2: Structure (Maçonnerie)
+                cursor.execute("""
+                    INSERT INTO contexts (id, category_id, tags, title, source, execution, pitch, dosages, materials, price, justification, type_ouvrage)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """, (
+                    "ctx-2", "cat-mac-2", "fissure_structure,linteau_beton,ferraillage,poteau,dalle,fissure",
+                    "Ferraillage de renfort et bétonnage de linteau (HA 10)",
+                    "CCT BNETD - Règles de calcul des ouvrages en béton armé",
+                    "1. Façonner l'armature avec 4 cadres HA 10 filants.\n2. Lier les cadres avec des épingles HA 6 espacées de 15 cm.\n3. Assurer un enrobage de 3 cm minimum avec des cales en mortier.\n4. Utiliser du ciment CPJ 42.5 de structure dosé à 350 kg/m³.\n5. Piquer le béton frais à la barre de fer.\n6. Laisser sécher sous coffrage humide pendant 14 jours minimum.",
+                    "« Boss, le linteau c'est comme le pilier de la famille. S'il y a une fissure structurelle au-dessus de la porte, c'est que le fer ou le ciment utilisé était trop faible. La norme BNETD exige du fer HA 10 et du ciment CPJ 42.5. Si on met du fer de 8 ou du ciment CPJ 32.5, le mur va se fendre. Faisons un ouvrage propre qui va durer. »",
+                    psycopg2.extras.Json([{"element": "Ciment CPJ 42.5", "ratio": "1 sac", "unite_mesure_locale": "Sac"}, {"element": "Gravier 15/25", "ratio": "2.5 brouettes", "unite_mesure_locale": "Brouette (60L)"}]),
+                    psycopg2.extras.Json([{"nom": "Ciment CPJ 42.5", "substitut_acceptable": "Aucun", "disponibilite": "Quincaillerie"}, {"nom": "Fers HA 10", "substitut_acceptable": "Fers certifiés", "disponibilite": "Quincaillerie"}]),
+                    "15 000 - 25 000 FCFA par linteau standard",
+                    "Le coût s'explique par la qualité mécanique requise.",
+                    "Poteau-Poutre"
+                ))
+
+                # Context 3: Moteur (Mécanique)
+                cursor.execute("""
+                    INSERT INTO contexts (id, category_id, tags, title, source, execution, pitch, dosages, materials, price, justification, type_ouvrage)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """, (
+                    "ctx-3", "cat-mec-1", "moteur,vidange,huile,filtre",
+                    "Vidange Moteur et Remplacement Filtre",
+                    "Manuel du Constructeur Automobile",
+                    "1. Mettre le véhicule sur pont élévateur.\n2. Vidanger l'huile usagée à chaud.\n3. Remplacer le filtre à huile et le joint de bouchon de carter.\n4. Remplir avec l'huile recommandée (ex: 5W40 synthétique).\n5. Vérifier le niveau d'huile et l'absence de fuites.",
+                    "« Boss, le moteur c'est le coeur de la voiture. Si on ne change pas l'huile à temps, les pièces vont s'user très vite et le moteur risque de couler. Mettre de l'huile de bonne qualité et un filtre neuf, c'est la garantie de rouler sans panne sur la route de Yamoussoukro. Un bon entretien évite les grosses factures. »",
+                    psycopg2.extras.Json([{"element": "Huile Moteur 5W40", "ratio": "5 Litres", "unite_mesure_locale": "Bidon (5L)"}]),
+                    psycopg2.extras.Json([{"nom": "Huile Synthétique 5W40", "substitut_acceptable": "10W40 (selon km)", "disponibilite": "Station Service ou Boutique Pièces"}, {"nom": "Filtre à huile", "substitut_acceptable": "Aucun", "disponibilite": "Boutique Pièces"}]),
+                    "25 000 - 45 000 FCFA",
+                    "Le coût inclut l'huile de synthèse et un filtre de qualité pour préserver la durée de vie du moteur.",
+                    "Entretien Moteur"
+                ))
+                
+                # Context 4: Freinage (Mécanique)
+                cursor.execute("""
+                    INSERT INTO contexts (id, category_id, tags, title, source, execution, pitch, dosages, materials, price, justification, type_ouvrage)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """, (
+                    "ctx-4", "cat-mec-2", "frein,plaquette,disque,bruit_freinage",
+                    "Remplacement Plaquettes de Frein",
+                    "Normes de Sécurité Routière",
+                    "1. Démonter la roue.\n2. Repousser le piston de l'étrier.\n3. Remplacer les plaquettes usées par des neuves.\n4. Vérifier l'état du disque.\n5. Pomper sur la pédale de frein avant de rouler.",
+                    "« Tonton, avec les freins, on ne blague pas. Si les plaquettes sont finies, ça va rayer le disque et vous n'allez pas pouvoir vous arrêter en cas d'urgence. Des plaquettes neuves, c'est l'assurance pour vous et votre famille sur l'autoroute. »",
+                    psycopg2.extras.Json([]),
+                    psycopg2.extras.Json([{"nom": "Jeu de Plaquettes", "substitut_acceptable": "Aucun (Sécurité)", "disponibilite": "Boutique Pièces"}]),
+                    "15 000 - 30 000 FCFA",
+                    "Il est crucial d'utiliser des plaquettes certifiées pour éviter les accidents et l'usure prématurée du disque de frein.",
+                    "Sécurité - Freinage"
+                ))
+
                 conn.commit()
     except Exception as err:
         print(f"Erreur d'initialisation de la base de données : {err}")
@@ -310,133 +517,159 @@ def hash_password(password: str) -> str:
     salt = "prosartisan_secure_salt_2026"
     return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
 
+def clean_and_parse_json(text: str):
+    import json as json_lib
+    text_clean = text.strip()
+    if text_clean.startswith("```"):
+        lines = text_clean.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text_clean = "\n".join(lines).strip()
+    try:
+        return json_lib.loads(text_clean)
+    except Exception as first_err:
+        start_idx = text_clean.find("{")
+        end_idx = text_clean.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            try:
+                return json_lib.loads(text_clean[start_idx:end_idx+1])
+            except Exception:
+                pass
+        raise first_err
+
 def generate_llm_fallback(query_tags, user_email):
     import time
     tags_str = ", ".join(query_tags)
     
-    # Détecter la catégorie de pathologie
-    is_moisture = any(t in query_tags for t in ["remontee_capillaire", "humidite_bas", "salpetre", "humidite", "arase", "soubassement"])
-    is_structure = any(t in query_tags for t in ["fissure_structure", "linteau_beton", "ferraillage", "poteau", "dalle", "fissure"])
-    is_infiltration = any(t in query_tags for t in ["infiltration_dalle", "toit_terrasse", "etancheite_defaillante", "etancheite"])
-    
-    if is_moisture:
-        title = "Traitement des remontées d'humidité et salpêtre (Arase Hydrofuge)"
-        source = "Norme LBTP / RE-CIM Section 5.4 - Barrière d'étanchéité"
-        execution = (
-            "1. Piquer l'enduit abîmé ou contaminé sur 50 cm au-dessus des traces de salpêtre.\n"
-            "2. Laver le mur à l'eau douce pour enlever le sel capillaire.\n"
-            "3. Mouiller abondamment le mur en parpaings avant d'appliquer le gobetis pour éviter les décollements ('enduit brûlé').\n"
-            "4. Préparer un mortier de ciment CPJ 42.5 dosé à 350 kg/m³ (1 sac de 50 kg pour 2 brouettes de sable de carrière propre).\n"
-            "5. Incorporer 1 sachet de SikaCim (ou Super Sikalite) par sac de ciment dans l'eau de gâchage.\n"
-            "6. Appliquer l'enduit serré en deux passes croisées de 10 mm d'épaisseur."
+    # Charger les contextes de notre base de données locale comme source d'information additionnelle
+    db_contexts_summary = ""
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            user=PG_USER,
+            password=PG_PASSWORD,
+            dbname=PG_DB
         )
-        pitch = (
-            "« Vieux Père, le bas du mur est en train de gâter à cause de l'humidité qui monte du sol. "
-            "C'est comme la pluie : si on ne met pas de chapeau, on est mouillé. Le mur a besoin d'un bouclier. "
-            "Selon la norme LBTP pour la sécurité de la maison, il faut faire une coupure de capillarité. "
-            "Si on repeint directement sans arase étanche avec hydrofuge SikaCim, la peinture va encore sauter dans 3 mois "
-            "et ce sera de l'argent jeté. Pour honorer votre investissement et protéger la famille, "
-            "voici le dosage et la méthode certifiée. Que Dieu bénisse le travail de nos mains. »"
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+            cursor.execute("SELECT * FROM contexts;")
+            db_rows = cursor.fetchall()
+            for r in db_rows:
+                db_contexts_summary += f"- Fiche: {r['title']} | Source: {r['source']} | Dosages: {r['dosages']} | Prix: {r['price']}\n"
+    except Exception as e:
+        print(f"Erreur lecture contextes pour generate_llm_fallback: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+    # 1. Tenter d'utiliser Gemini avec Grounding de Recherche Google
+    if GEMINI_API_KEY:
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            prompt = f"""Tu es un expert en bâtiment et maçonnerie en Côte d'Ivoire (normes LBTP, BNETD).
+Un maçon te demande une recommandation technique et un argumentaire commercial ('Bouclier Client') pour les tags de pathologies suivants : {tags_str}.
+
+Voici les fiches de référence de la base de données locale du projet :
+{db_contexts_summary}
+
+Si l'argumentaire technique, les dosages, ou les spécifications correspondantes ne sont pas fournis ou ne correspondent pas aux fiches de la base de données locale ci-dessus, utilise obligatoirement l'outil Google Search pour trouver des spécifications externes à jour, des normes ivoiriennes pertinentes, des dosages ou des estimations de prix locales en FCFA. Indique clairement dans la source ('norme_origine.source') que l'information provient de cette recherche externe si c'est le cas.
+
+Génère une fiche technique complète et structurée au format JSON.
+
+Règles pour les champs :
+1. Le ton du "Bouclier Client" (bouclier_autorite) doit être rédigé à la première personne en tant que chef de chantier ivoirien ("Vieux Père", "Boss de chantier") s'adressant à son client ("Grand-frère", "Tonton", "Maman", "Patron") avec grand respect, bienveillance et autorité technique pour justifier l'achat des bons matériaux et éviter les fausses économies.
+2. Formate le résultat exclusivement en JSON valide avec cette structure :
+{{
+  "id": "llm-fallback-grounded-{int(time.time())}",
+  "norme_origine": {{
+    "source": "[LBTP ou BNETD ou Autre source externe identifiée par la recherche]",
+    "reference_article": "[Référence de l'article ou section, ex: Section 4.2]",
+    "titre_original": "[Titre officiel de la règle de l'art]",
+    "texte_brut": "[Explication technique de la norme ou spécification trouvée]"
+  }},
+  "alternative_prosartisan": {{
+    "titre_vulgarise": "[Nom clair et vulgarisé de l'ouvrage ou traitement]",
+    "methode_execution": "[Étapes détaillées pour réaliser les travaux sur le chantier, adaptées aux tags : {tags_str}]",
+    "dosages_recommandes": [
+      {{ "element": "[Nom du matériau, ex: Ciment CPJ 42.5]", "ratio": "[ex: 1 sac (50kg) ou ratio précis]", "unite_mesure_locale": "[ex: Sac ou Brouette]" }}
+    ],
+    "materiaux_recommandes": [
+      {{ "nom": "[Nom du matériau]", "substitut_acceptable": "[Substitut]", "disponibilite": "[ex: Quincaillerie]" }}
+    ],
+    "bouclier_autorite": "[L'argumentaire de vente client écrit dans le ton respectueux ivoirien décrit ci-dessus]"
+  }},
+  "cout_estime_local": {{
+    "gamme_prix": "[Faible ou Moyen ou Eleve]",
+    "estimation_m2_fcfa": "[Estimation des prix en FCFA en Côte d'Ivoire récupérée ou estimée par la recherche]",
+    "justification_economique": "[Justification claire de l'investissement]"
+  }},
+  "metadata": {{
+    "tags_pathologies": {json.dumps(query_tags)},
+    "type_ouvrage": "[ex: Etancheite, Poteau-Poutre, Maconnerie]",
+    "is_llm_fallback": true,
+    "generated_for": "{user_email}"
+  }}
+}}
+"""
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())],
+                    response_mime_type="application/json"
+                )
+            )
+            import json as json_lib
+            result_json = clean_and_parse_json(response.text)
+            return result_json
+        except Exception as e:
+            print(f"Erreur generate_llm_fallback avec grounding : {e}")
+
+    # 2. Fallback de recherche locale standard
+    conn = None
+    matched_context = None
+    try:
+        conn = psycopg2.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            user=PG_USER,
+            password=PG_PASSWORD,
+            dbname=PG_DB
         )
-        dosages = [
-            { "element": "Ciment CPJ 42.5 (CIMAF/Lafarge)", "ratio": "1 sac (50kg)", "unite_mesure_locale": "Sac" },
-            { "element": "Sable de carrière propre", "ratio": "2 brouettes de 60L", "unite_mesure_locale": "Brouette (60L)" },
-            { "element": "Adjuvant hydrofuge SikaCim", "ratio": "1 sachet (1kg)", "unite_mesure_locale": "Sachet (1kg)" }
-        ]
-        mats = [
-            { "nom": "Ciment CPJ 42.5", "substitut_acceptable": "Aucun substitut pour arase", "disponibilite": "Quincaillerie" },
-            { "nom": "SikaCim", "substitut_acceptable": "Super Sikalite", "disponibilite": "Quincaillerie" },
-            { "nom": "Sable de carrière", "substitut_acceptable": "Sable de lagune lavé", "disponibilite": "Quincaillerie" }
-        ]
-        price = "4 500 - 6 500 FCFA par mètre linéaire"
-        justification = (
-            "L'achat d'un sachet d'hydrofuge (environ 1 500 FCFA) protège la peinture et le plâtre intérieur. "
-            "En Côte d'Ivoire, les pluies de juin sont très fortes. Ne pas faire d'arase étanche, c'est s'exposer à refaire les enduits chaque année, ce qui coûte 5 fois plus cher."
-        )
-        type_ouvrage = "Arase"
-        
-    elif is_structure:
-        title = "Ferraillage de renfort et bétonnage de linteau (HA 10)"
-        source = "CCT BNETD - Règles de calcul des ouvrages en béton armé"
-        execution = (
-            "1. Façonner l'armature avec 4 cadres HA 10 filants.\n"
-            "2. Lier les cadres avec des épingles HA 6 espacées de 15 cm.\n"
-            "3. Assurer un enrobage de 3 cm minimum avec des cales en mortier (pas de contact métal-coffrage pour éviter la rouille).\n"
-            "4. Utiliser du ciment CPJ 42.5 de structure dosé à 350 kg/m³ (7 sacs de 50 kg par m³).\n"
-            "5. Piquer le béton frais à la barre de fer pour éliminer les bulles d'air ('nids de cailloux').\n"
-            "6. Laisser sécher sous coffrage humide pendant 14 jours minimum."
-        )
-        pitch = (
-            "« Boss, le linteau c'est comme le pilier de la famille. S'il y a une fissure structurelle au-dessus de la porte, "
-            "c'est que le fer ou le ciment utilisé était trop faible. On ne fait pas de 'travail fia' (travail bâclé) sur la sécurité des enfants. "
-            "La norme BNETD exige du fer HA 10 et du ciment CPJ 42.5 haute résistance. "
-            "Si on met du fer de 8 ou du ciment CPJ 32.5 bon marché, le mur va se fendre et ça peut s'effondrer. "
-            "Faisons un ouvrage propre qui va durer des générations. Que le Bon Dieu protège le chantier. »"
-        )
-        dosages = [
-            { "element": "Ciment CPJ 42.5 (CIMAF/Lafarge)", "ratio": "1 sac (50kg)", "unite_mesure_locale": "Sac" },
-            { "element": "Sable de carrière propre", "ratio": "1.5 brouettes de 60L", "unite_mesure_locale": "Brouette (60L)" },
-            { "element": "Gravier 15/25 de concassage", "ratio": "2.5 brouettes", "unite_mesure_locale": "Brouette (60L)" }
-        ]
-        mats = [
-            { "nom": "Ciment CPJ 42.5", "substitut_acceptable": "Aucun (CPJ 32.5 formellement interdit pour structure)", "disponibilite": "Quincaillerie" },
-            { "nom": "Fers HA 10 et HA 6", "substitut_acceptable": "Fers importés certifiés", "disponibilite": "Quincaillerie" },
-            { "nom": "Gravier concassé 15/25", "substitut_acceptable": "Gravier de lagune lavé", "disponibilite": "Zone Industrielle" }
-        ]
-        price = "15 000 - 25 000 FCFA par linteau standard"
-        justification = (
-            "Le coût s'explique par la qualité mécanique requise (CPJ 42.5 et HA 10). "
-            "Expliquez au client que rogner sur la structure met le bâtiment en péril et que la reconstruction coûtera 10 fois le prix d'un linteau bien fait dès le départ."
-        )
-        type_ouvrage = "Poteau-Poutre"
-        
-    elif is_infiltration:
-        title = "Étanchéité liquide de toit-terrasse (SEL manuel)"
-        source = "Norme RE-CIM - Guide EN-1996 - Toitures-terrasses"
-        execution = (
-            "1. Nettoyer et gratter parfaitement la dalle (enlever mousse, poussière, terre).\n"
-            "2. Ouvrir les fissures en V et les reboucher au mortier hydrofugé.\n"
-            "3. Appliquer la première couche de résine acrylique liquide SEL au rouleau.\n"
-            "4. Maroufler immédiatement la bande d'armature fibre de verre sur la résine fraîche.\n"
-            "5. Laisser sécher 12h, puis appliquer la deuxième couche croisée.\n"
-            "6. Appliquer la troisième couche de finition après 12h."
-        )
-        pitch = (
-            "« Tonton, la dalle du salon boit la pluie d'Abidjan. Si on ne fait rien, l'eau va rouiller les fers à béton à l'intérieur. "
-            "Quand le fer rouille, il gonfle et fait éclater la dalle par le bas. Vos peintures et meubles seront gâtés. "
-            "Selon les spécifications RE-CIM, il faut poser une étanchéité liquide en trois couches avec toile de verre. "
-            "C'est un investissement nécessaire pour garder l'héritage de vos enfants sec et solide. "
-            "Travaillons dans les règles de l'art pour ne pas regretter plus tard. »"
-        )
-        dosages = [
-            { "element": "Résine d'étanchéité liquide (Lanko ou Sika)", "ratio": "1.5 kg par m²", "unite_mesure_locale": "Seau de maçon (10L)" },
-            { "element": "Armature fibre de verre (toile)", "ratio": "1.1 m² par m²", "unite_mesure_locale": "Sac" }
-        ]
-        mats = [
-            { "nom": "Résine d'étanchéité liquide SEL", "substitut_acceptable": "Peinture bitumineuse (Moins durable)", "disponibilite": "Zone Industrielle" },
-            { "nom": "Toile de renfort en fibre de verre", "substitut_acceptable": "Treillis fin en nylon", "disponibilite": "Quincaillerie" }
-        ]
-        price = "8 000 - 12 000 FCFA par m²"
-        justification = (
-            "La résine d'étanchéité élastomère et la fibre de verre résistent aux UV et aux fortes variations thermiques d'Abidjan. "
-            "C'est le seul moyen d'éviter les infiltrations récurrentes sur dalle terrasse sans refaire de chape lourde."
-        )
-        type_ouvrage = "Etancheite"
-        
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+            cursor.execute("SELECT * FROM contexts;")
+            contexts = cursor.fetchall()
+            
+            # Simple matching by tag
+            for ctx in contexts:
+                ctx_tags = [t.strip().lower() for t in ctx["tags"].split(",") if t.strip()]
+                if any(q.lower() in ctx_tags for q in [tag.lower() for tag in query_tags]):
+                    matched_context = ctx
+                    break
+    except Exception as e:
+        print(f"Erreur DB dans generate_llm_fallback: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+    if matched_context:
+        title = matched_context["title"]
+        source = matched_context["source"]
+        execution = matched_context["execution"]
+        pitch = matched_context["pitch"]
+        dosages = matched_context["dosages"] if matched_context["dosages"] else []
+        mats = matched_context["materials"] if matched_context["materials"] else []
+        price = matched_context["price"]
+        justification = matched_context["justification"]
+        type_ouvrage = matched_context["type_ouvrage"]
     else:
         title = "Dosage standardisé pour mortier et béton courants"
         source = "Recommandations Générales BNETD / LBTP"
-        execution = (
-            "1. Délimiter une aire de gâchage propre et plane (plaque de tôle) pour ne pas mélanger de terre.\n"
-            "2. Mélanger le ciment local et le sable à sec, puis incorporer les graviers.\n"
-            "3. Ajouter l'eau propre progressivement sans excès pour ne pas affaiblir le mélange.\n"
-            "4. Mettre en œuvre rapidement avant le début de prise."
-        )
-        pitch = (
-            "« Chef de chantier, pour tous nos travaux, on doit suivre les dosages de l'État pour que le travail soit solide et propre. "
-            "Le ciment CPJ 32.5 est bon pour monter les briques et crépir, mais pour tout ce qui porte le poids (linteaux, poteaux), "
-            "le CPJ 42.5 est obligatoire. Faisons un dosage de confiance pour honorer notre nom. »"
-        )
+        execution = "1. Délimiter une aire de gâchage propre et plane (plaque de tôle) pour ne pas mélanger de terre.\n2. Mélanger le ciment local et le sable à sec, puis incorporer les graviers.\n3. Ajouter l'eau propre progressivement sans excès pour ne pas affaiblir le mélange.\n4. Mettre en œuvre rapidement avant le début de prise."
+        pitch = "« Chef de chantier, pour tous nos travaux, on doit suivre les dosages de l'État pour que le travail soit solide et propre. Le ciment CPJ 32.5 est bon pour monter les briques et crépir, mais pour tout ce qui porte le poids (linteaux, poteaux), le CPJ 42.5 est obligatoire. Faisons un dosage de confiance pour honorer notre nom. »"
         dosages = [
             { "element": "Ciment local (CPJ 32.5 ou 42.5)", "ratio": "1 sac (50kg)", "unite_mesure_locale": "Sac" },
             { "element": "Sable propre", "ratio": "2 brouettes de 60L", "unite_mesure_locale": "Brouette (60L)" }
@@ -477,6 +710,121 @@ def generate_llm_fallback(query_tags, user_email):
             "generated_for": user_email
         }
     }
+
+def analyze_image_with_vlm(image_b64=None, image_url=None, query_tags=None, user_email="Anonyme"):
+    if not GEMINI_API_KEY:
+        return None
+    
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # Préparer le contenu de l'image
+        contents = []
+        if image_b64:
+            import base64
+            # Gérer les préfixes éventuels de data URI (ex: data:image/jpeg;base64,...)
+            if "," in image_b64:
+                image_b64 = image_b64.split(",")[1]
+            img_bytes = base64.b64decode(image_b64)
+            img_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+            contents.append(img_part)
+        elif image_url:
+            import requests
+            try:
+                resp = requests.get(image_url, timeout=10)
+                if resp.status_code == 200:
+                    img_part = types.Part.from_bytes(data=resp.content, mime_type="image/jpeg")
+                    contents.append(img_part)
+            except Exception as e:
+                print(f"Erreur téléchargement image preset : {e}")
+        
+        if not contents:
+            return None
+        
+        # Charger les contextes de notre base de données locale comme source d'information additionnelle
+        db_contexts_summary = ""
+        conn = None
+        try:
+            conn = psycopg2.connect(
+                host=PG_HOST,
+                port=PG_PORT,
+                user=PG_USER,
+                password=PG_PASSWORD,
+                dbname=PG_DB
+            )
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute("SELECT * FROM contexts;")
+                db_rows = cursor.fetchall()
+                for r in db_rows:
+                    db_contexts_summary += f"- Fiche: {r['title']} | Source: {r['source']} | Dosages: {r['dosages']} | Prix: {r['price']}\n"
+        except Exception as e:
+            print(f"Erreur lecture contextes pour VLM: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+        prompt = f"""Tu es un expert en diagnostic de pathologies du bâtiment et de maçonnerie en Côte d'Ivoire (normes LBTP, BNETD).
+Analyse l'image fournie de manière très détaillée pour détecter la pathologie visible (remontée capillaire, fissure de flexion/cisaillement sur linteau/poteau, infiltration en terrasse, etc.).
+
+Génère une fiche technique complète et structurée au format JSON.
+
+Voici les règles pour les champs du JSON :
+1. Les recommandations doivent être extrêmement pertinentes, actualisées et répondre aux critères modernes de construction en Côte d'Ivoire (ex: ciment CPJ 42.5 pour le béton de structure, adjuvants hydrofuges SikaCim ou Super Sikalite pour l'étanchéité, sable de carrière propre et lavé, membranes d'étanchéité bitumineuse NF EN 13969 ou résines SEL fluides modernes).
+2. Le ton du "Bouclier Client" (bouclier_autorite) doit être rédigé à la première personne en tant que chef de chantier ivoirien ("Vieux Père", "Boss de chantier") s'adressant à son client ("Grand-frère", "Tonton", "Maman", "Patron") avec grand respect, bienveillance et autorité technique pour justifier l'achat des bons matériaux modernes et rejeter les fausses économies ("mougou-mougou") qui conduisent à des sinistres structurels ou d'étanchéité. Adapte spécifiquement l'argumentaire à ce qui est visible dans l'image.
+3. Pour t'inspirer des dosages et normes de la base de données locale du projet, utilise ces fiches de référence s'il y a lieu :
+{db_contexts_summary}
+4. Si l'argumentaire technique, les dosages, ou les spécifications correspondantes ne sont pas fournis ou ne correspondent pas aux fiches de la base de données locale ci-dessus, utilise obligatoirement l'outil Google Search pour étendre ton analyse sur des spécifications depuis des sources externes (règles BNETD, normes LBTP de Côte d'Ivoire, documentations fabricants Sika/Lafarge/etc., prix locaux des matériaux, etc.). Indique clairement dans le champ source ('norme_origine.source') que l'information provient de cette recherche ou spécification externe.
+
+Génère obligatoirement un JSON valide répondant exactement à cette structure (ne mets aucun texte autour, uniquement le JSON) :
+{{
+  "id": "vlm-analysis-{int(datetime.utcnow().timestamp())}",
+  "norme_origine": {{
+    "source": "[Nom de la norme, ex: LBTP ou BNETD]",
+    "reference_article": "[Article spécifique, ex: Section 4.2 ou Section 7.8]",
+    "titre_original": "[Titre officiel de la règle de l'art]",
+    "texte_brut": "[Explication technique de la norme officielle]"
+  }},
+  "alternative_prosartisan": {{
+    "titre_vulgarise": "[Nom clair et vulgarisé de l'ouvrage ou traitement, ex: Réalisation d'une coupure de capillarité (arase étanche)]",
+    "methode_execution": "[Étapes claires, détaillées et professionnelles pour réaliser les travaux sur le chantier, adaptées à la pathologie observée sur l'image]",
+    "dosages_recommandes": [
+      {{ "element": "[ex: Ciment CPJ 42.5 (CIMAF / LafargeHolcim)]", "ratio": "[ex: 1 sac (50kg)]", "unite_mesure_locale": "[ex: Sac]" }}
+    ],
+    "materiaux_recommandes": [
+      {{ "nom": "[ex: Adjuvant SikaCim]", "substitut_acceptable": "[ex: Super Sikalite]", "disponibilite": "[ex: Quincaillerie]" }}
+    ],
+    "bouclier_autorite": "[L'argumentaire de vente client écrit dans le ton ivoirien respectueux décrit ci-dessus, faisant explicitement référence à ce qui est visible sur l'image]"
+  }},
+  "cout_estime_local": {{
+    "gamme_prix": "[Faible ou Moyen ou Eleve]",
+    "estimation_m2_fcfa": "[ex: 4 500 - 6 000 FCFA par m2 ou par mètre linéaire]",
+    "justification_economique": "[Justification économique claire pour le client: pourquoi investir dans ces matériaux modernes évite des dépenses répétées]"
+  }},
+  "metadata": {{
+    "tags_pathologies": {json.dumps(query_tags or [])},
+    "type_ouvrage": "[ex: Etancheite, Poteau-Poutre, Maconnerie]",
+    "is_llm_fallback": true,
+    "generated_for": "{user_email}"
+  }}
+}}
+"""
+        contents.append(prompt)
+        
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=contents,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                response_mime_type="application/json"
+            )
+        )
+        
+        import json as json_lib
+        result_json = clean_and_parse_json(response.text)
+        return result_json
+    except Exception as e:
+        print(f"Erreur analyze_image_with_vlm: {e}")
+        return None
 
 class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -599,6 +947,69 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
             finally:
                 if conn:
                     conn.close()
+            return
+
+        # GET /api/config/professions
+        elif path == "/api/config/professions":
+            conn = None
+            try:
+                conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASSWORD, dbname=PG_DB)
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                    cursor.execute("SELECT * FROM professions;")
+                    rows = cursor.fetchall()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(rows).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn: conn.close()
+            return
+
+        # GET /api/config/categories
+        elif path == "/api/config/categories":
+            conn = None
+            try:
+                conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASSWORD, dbname=PG_DB)
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                    cursor.execute("SELECT * FROM categories;")
+                    rows = cursor.fetchall()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(rows).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn: conn.close()
+            return
+
+        # GET /api/config/contexts
+        elif path == "/api/config/contexts":
+            conn = None
+            try:
+                conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASSWORD, dbname=PG_DB)
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                    cursor.execute("SELECT * FROM contexts;")
+                    rows = cursor.fetchall()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(rows).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn: conn.close()
             return
 
         # GET /api/production
@@ -998,6 +1409,106 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
                     conn.close()
             return
 
+        # POST /api/config/professions
+        elif path == "/api/config/professions":
+            conn = None
+            try:
+                data = json.loads(body)
+                import uuid
+                item_id = data.get("id", f"prof-{uuid.uuid4().hex[:8]}")
+                name = data.get("name")
+                description = data.get("description", "")
+                
+                conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASSWORD, dbname=PG_DB)
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO professions (id, name, description) VALUES (%s, %s, %s);",
+                        (item_id, name, description)
+                    )
+                    conn.commit()
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "id": item_id}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn: conn.close()
+            return
+
+        # POST /api/config/categories
+        elif path == "/api/config/categories":
+            conn = None
+            try:
+                data = json.loads(body)
+                import uuid
+                item_id = data.get("id", f"cat-{uuid.uuid4().hex[:8]}")
+                profession_id = data.get("profession_id")
+                name = data.get("name")
+                description = data.get("description", "")
+                
+                conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASSWORD, dbname=PG_DB)
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO categories (id, profession_id, name, description) VALUES (%s, %s, %s, %s);",
+                        (item_id, profession_id, name, description)
+                    )
+                    conn.commit()
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "id": item_id}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn: conn.close()
+            return
+
+        # POST /api/config/contexts
+        elif path == "/api/config/contexts":
+            conn = None
+            try:
+                data = json.loads(body)
+                import uuid
+                item_id = data.get("id", f"ctx-{uuid.uuid4().hex[:8]}")
+                category_id = data.get("category_id")
+                tags = data.get("tags", "")
+                title = data.get("title", "")
+                source = data.get("source", "")
+                execution = data.get("execution", "")
+                pitch = data.get("pitch", "")
+                dosages = data.get("dosages", [])
+                materials = data.get("materials", [])
+                price = data.get("price", "")
+                justification = data.get("justification", "")
+                type_ouvrage = data.get("type_ouvrage", "")
+
+                conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASSWORD, dbname=PG_DB)
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO contexts (id, category_id, tags, title, source, execution, pitch, dosages, materials, price, justification, type_ouvrage)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    """, (item_id, category_id, tags, title, source, execution, pitch, psycopg2.extras.Json(dosages), psycopg2.extras.Json(materials), price, justification, type_ouvrage))
+                    conn.commit()
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "id": item_id}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            finally:
+                if conn: conn.close()
+            return
+
         # POST /api/staging
         elif path == "/api/staging":
             conn = None
@@ -1145,55 +1656,67 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
                 search_query = json.loads(body)
                 query_tags = search_query.get("tags", [])
                 filters = search_query.get("filters", {})
+                image_b64 = search_query.get("image_b64")
+                image_url = search_query.get("image_url")
 
-                conn = psycopg2.connect(
-                    host=PG_HOST,
-                    port=PG_PORT,
-                    user=PG_USER,
-                    password=PG_PASSWORD,
-                    dbname=PG_DB
-                )
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-                    cursor.execute("SELECT * FROM production_items;")
-                    rows = cursor.fetchall()
+                user_email = self.get_authenticated_user() or "Anonyme"
+                
+                # Si une image est fournie et que la clé Gemini est configurée, effectuer l'analyse VLM
+                vlm_result = None
+                if GEMINI_API_KEY and (image_b64 or image_url):
+                    print(f"Lancement de l'analyse VLM pour l'image (utilisateur: {user_email})...")
+                    vlm_result = analyze_image_with_vlm(image_b64, image_url, query_tags, user_email)
 
-                matched_results = []
-                for r in rows:
-                    item_json = r["generated_json"]
-                    item_tags = [t.strip() for t in r["tags"].split(",") if t.strip()]
+                if vlm_result:
+                    matched_results = [vlm_result]
+                else:
+                    conn = psycopg2.connect(
+                        host=PG_HOST,
+                        port=PG_PORT,
+                        user=PG_USER,
+                        password=PG_PASSWORD,
+                        dbname=PG_DB
+                    )
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                        cursor.execute("SELECT * FROM production_items;")
+                        rows = cursor.fetchall()
 
-                    # 1. Correspondance sémantique
-                    has_tag_match = any(tag in item_tags for tag in query_tags)
-                    if not has_tag_match:
-                        continue
+                    matched_results = []
+                    for r in rows:
+                        item_json = r["generated_json"]
+                        item_tags = [t.strip() for t in r["tags"].split(",") if t.strip()]
 
-                    # 2. Filtre de Budget
-                    if filters.get("maxBudget"):
-                        max_budget = filters["maxBudget"]
-                        item_budget = item_json.get("cout_estime_local", {}).get("gamme_prix")
-                        budget_weights = { "Faible": 1, "Moyen": 2, "Eleve": 3 }
-                        
-                        max_weight = budget_weights.get(max_budget, 2)
-                        item_weight = budget_weights.get(item_budget, 1)
-                        
-                        if item_weight > max_weight:
+                        # 1. Correspondance sémantique
+                        has_tag_match = any(tag in item_tags for tag in query_tags)
+                        if not has_tag_match:
                             continue
 
-                    # 3. Filtre Quincaillerie Locale
-                    if filters.get("onlyHardwareStore") is True:
-                        mats = item_json.get("alternative_prosartisan", {}).get("materiaux_recommandes", [])
-                        has_only_local = all(m.get("disponibilite") == "Quincaillerie" for m in mats)
-                        if not has_only_local:
-                            continue
+                        # 2. Filtre de Budget
+                        if filters.get("maxBudget"):
+                            max_budget = filters["maxBudget"]
+                            item_budget = item_json.get("cout_estime_local", {}).get("gamme_prix")
+                            budget_weights = { "Faible": 1, "Moyen": 2, "Eleve": 3 }
+                            
+                            max_weight = budget_weights.get(max_budget, 2)
+                            item_weight = budget_weights.get(item_budget, 1)
+                            
+                            if item_weight > max_weight:
+                                continue
 
-                    matched_results.append(item_json)
+                        # 3. Filtre Quincaillerie Locale
+                        if filters.get("onlyHardwareStore") is True:
+                            mats = item_json.get("alternative_prosartisan", {}).get("materiaux_recommandes", [])
+                            has_only_local = all(m.get("disponibilite") == "Quincaillerie" for m in mats)
+                            if not has_only_local:
+                                continue
 
-                # Si aucune fiche de production ne correspond, consulter le LLM associé au compte
-                if not matched_results:
-                    user_email = self.get_authenticated_user() or "Anonyme"
-                    print(f"Fallback LLM pour l'utilisateur : {user_email}")
-                    fallback_item = generate_llm_fallback(query_tags, user_email)
-                    matched_results.append(fallback_item)
+                        matched_results.append(item_json)
+
+                    # Si aucune fiche de production ne correspond, consulter le LLM associé au compte
+                    if not matched_results:
+                        print(f"Fallback LLM pour l'utilisateur : {user_email}")
+                        fallback_item = generate_llm_fallback(query_tags, user_email)
+                        matched_results.append(fallback_item)
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1275,7 +1798,7 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
 
                 if GEMINI_API_KEY:
                     try:
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        client = genai.Client(api_key=GEMINI_API_KEY)
                         prompt = f"Tu es un assistant BTP expert ('Bouclier d'Autorité') pour la plateforme ProsArtisan en Côte d'Ivoire. Le maçon ('Boss') te demande: '{user_msg}'.\n"
                         if context_texts:
                             prompt += "\nUtilise les informations suivantes de notre base de données locale validée pour répondre de manière très professionnelle, valorisante et claire pour justifier les devis aux clients :\n"
@@ -1284,7 +1807,10 @@ class ProsArtisanAPIHandler(http.server.SimpleHTTPRequestHandler):
                         else:
                             prompt += "\nRéponds de manière professionnelle et adaptée au contexte de construction ivoirien (ciments CPJ 32.5/42.5, dosage, pathologies courantes). Si la question n'est pas liée au BTP ou à la maçonnerie, rappelle poliment ton rôle."
                         
-                        response = model.generate_content(prompt)
+                        response = client.models.generate_content(
+                            model='gemini-1.5-flash',
+                            contents=prompt
+                        )
                         response_text = response.text
                     except Exception as gemini_err:
                         print(f"Erreur appel Gemini : {gemini_err}")

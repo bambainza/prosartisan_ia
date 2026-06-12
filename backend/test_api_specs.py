@@ -83,3 +83,19 @@ def test_chat_endpoint():
     assert isinstance(results["response"], str)
     assert "sources" in results
     assert isinstance(results["sources"], list)
+
+def test_search_with_image():
+    # Lancer une recherche hybride avec une image preset factice
+    search_resp = requests.post(f"{BASE_URL}/api/search", json={
+        "tags": ["remontee_capillaire"],
+        "filters": {},
+        "image_url": "http://localhost:8000/assets/humidité_bas_mur.jpg"
+    })
+    
+    assert search_resp.status_code == 200
+    results = search_resp.json()
+    assert len(results) >= 1
+    first_item = results[0]
+    assert "id" in first_item
+    assert "norme_origine" in first_item
+    assert "alternative_prosartisan" in first_item
